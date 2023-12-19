@@ -38,8 +38,8 @@ impl<'u, 'p> TwitchIdentify for Authenticated<'u, 'p> {
 	}
 }
 
+#[derive(Debug)]
 pub struct Chat {
-	irc: Client,
 	stream: ClientStream
 }
 
@@ -57,16 +57,27 @@ impl Chat {
 		.await?;
 		client.send_cap_req(&[TWITCH_CAPABILITY_COMMANDS, TWITCH_CAPABILITY_MEMBERSHIP, TWITCH_CAPABILITY_TAGS])?;
 		client.identify()?;
-		let stream = client.stream()?;
-		Ok(Self { irc: client, stream })
+		Ok(Self { stream: client.stream()? })
 	}
 }
 
 impl Stream for Chat {
-	type Item = irc::error::Result<irc::proto::Message>;
+	type Item = irc::error::Result<ChatEvent>;
 
 	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-		self.stream.poll_next_unpin(cx)
+		let next = self.stream.poll_next_unpin(cx);
+		match next {
+			Poll::Ready(Some(Ok(r))) => match crate::chat_event(r) {
+				Some(ev) => Poll::Ready(Some(Ok(ev))),
+				None => {
+					cx.waker().wake_by_ref();
+					Poll::Pending
+				}
+			},
+			Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
+			Poll::Ready(None) => Poll::Ready(None),
+			Poll::Pending => Poll::Pending
+		}
 	}
 }
 
