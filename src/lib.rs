@@ -36,7 +36,8 @@ impl Chat {
 	/// ```no_run
 	/// use brainrot::{Anonymous, Chat};
 	///
-	/// # fn main() -> anyhow::Result<()> {
+	/// # #[tokio::main]
+	/// # async fn main() -> anyhow::Result<()> {
 	/// let mut client = Chat::new("miyukiwei", Anonymous).await?;
 	/// # Ok(())
 	/// # }

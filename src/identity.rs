@@ -25,7 +25,8 @@ impl TwitchIdentity for Anonymous {
 /// ```no_run
 /// use brainrot::{Authenticated, Chat};
 ///
-/// # fn main() -> anyhow::Result<()> {
+/// # #[tokio::main]
+/// # async fn main() -> anyhow::Result<()> {
 /// let mut client = Chat::new("miyukiwei", Authenticated("yukifan4", "yfvzjqb705z12hrhy1zkwa9xt7v662")).await?;
 /// # Ok(())
 /// # }
