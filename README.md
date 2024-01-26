@@ -1,5 +1,5 @@
 # `brainrot`
-A Twitch IRC client.
+A live chat interface for Twitch & YouTube written in Rust.
 
 ## Usage
 See [`examples/main.rs`](https://github.com/vitri-ent/brainrot/blob/examples/main.rs).
