@@ -18,6 +18,7 @@ serde-aux = { version = "4.4", optional = true }
 uuid = { version = "1.5", optional = true }
 reqwest = { version = "0.11", optional = true }
 simd-json = { version = "0.13", optional = true }
+url = { version = "2.5", optional = true }
 regex = { version = "1.10", optional = true }
 
 [dev-dependencies]
@@ -27,7 +28,7 @@ tokio = { version = "1", features = [ "rt", "rt-multi-thread", "macros", "net" ]
 [features]
 default = [ "tls-native", "twitch", "youtube" ]
 twitch = [ "dep:irc", "dep:uuid" ]
-youtube = [ "dep:simd-json", "dep:reqwest", "dep:serde", "dep:regex", "dep:serde-aux" ]
+youtube = [ "dep:simd-json", "dep:reqwest", "dep:serde", "dep:url", "dep:regex", "dep:serde-aux" ]
 serde = [ "dep:serde", "chrono/serde", "uuid?/serde" ]
 tls-native = [ "irc?/tls-native" ]
 #tls-rust = [ "irc?/tls-rust" ]
