@@ -23,7 +23,7 @@ impl TwitchIdentity for Anonymous {
 /// use [`Anonymous`] instead.
 ///
 /// ```no_run
-/// use brainrot::{Authenticated, Chat};
+/// use brainrot::twitch::{Authenticated, Chat};
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {

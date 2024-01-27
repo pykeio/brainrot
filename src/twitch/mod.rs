@@ -33,7 +33,7 @@ impl Chat {
 	/// Connect to a Twitch IRC channel.
 	///
 	/// ```no_run
-	/// use brainrot::{Anonymous, Chat};
+	/// use brainrot::twitch::{Anonymous, Chat};
 	///
 	/// # #[tokio::main]
 	/// # async fn main() -> anyhow::Result<()> {
