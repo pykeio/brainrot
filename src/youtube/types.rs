@@ -124,6 +124,21 @@ pub enum MessageRun {
 	}
 }
 
+impl ToString for MessageRun {
+	fn to_string(&self) -> String {
+		match self {
+			Self::MessageText { text } => text.to_owned(),
+			Self::MessageEmoji { emoji, .. } => {
+				if let Some(true) = emoji.is_custom_emoji {
+					format!(":{}:", emoji.image.accessibility.accessibility_data.label)
+				} else {
+					emoji.image.accessibility.accessibility_data.label.to_owned()
+				}
+			}
+		}
+	}
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Emoji {
