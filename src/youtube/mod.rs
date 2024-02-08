@@ -1,5 +1,6 @@
 use std::{collections::VecDeque, sync::OnceLock};
 
+use futures_util::{Stream, StreamExt};
 use regex::Regex;
 use reqwest::{
 	header::{self, HeaderMap, HeaderValue},
@@ -154,15 +155,17 @@ unsafe impl<'r> Send for YouTubeChatPageProcessor<'r> {}
 impl<'r> YouTubeChatPageProcessor<'r> {
 	pub fn new(response: GetLiveChatResponse, request_options: &'r RequestOptions) -> Result<Self, YouTubeError> {
 		let continuation_token = if request_options.live_status {
-			response
+			let continuation = &response
 				.continuation_contents
 				.as_ref()
 				.ok_or(YouTubeError::MissingContinuationContents)?
 				.live_chat_continuation
-				.continuations[0]
+				.continuations[0];
+			continuation
 				.invalidation_continuation_data
 				.as_ref()
 				.map(|x| x.continuation.to_owned())
+				.or_else(|| continuation.timed_continuation_data.as_ref().map(|x| x.continuation.to_owned()))
 		} else {
 			response
 				.continuation_contents
@@ -175,15 +178,10 @@ impl<'r> YouTubeChatPageProcessor<'r> {
 				.map(|x| x.continuation.to_owned())
 		};
 		let signaler_topic = if request_options.live_status {
-			Some(
-				response.continuation_contents.as_ref().unwrap().live_chat_continuation.continuations[0]
-					.invalidation_continuation_data
-					.as_ref()
-					.unwrap()
-					.invalidation_id
-					.topic
-					.to_owned()
-			)
+			response.continuation_contents.as_ref().unwrap().live_chat_continuation.continuations[0]
+				.invalidation_continuation_data
+				.as_ref()
+				.map(|c| c.invalidation_id.topic.to_owned())
 		} else {
 			None
 		};
@@ -297,6 +295,7 @@ impl<'r> Iterator for &YouTubeChatPageProcessor<'r> {
 
 pub async fn fetch_yt_chat_page(options: &RequestOptions, continuation: impl AsRef<str>) -> Result<GetLiveChatResponse, YouTubeError> {
 	let body = GetLiveChatBody::new(continuation.as_ref(), &options.client_version, "WEB");
+	println!("{}", simd_json::to_string(&body)?);
 	let response: GetLiveChatResponse = get_http_client()
 		.post(Url::parse_with_params(
 			if options.live_status { TANGO_LIVE_ENDPOINT } else { TANGO_REPLAY_ENDPOINT },
@@ -307,5 +306,55 @@ pub async fn fetch_yt_chat_page(options: &RequestOptions, continuation: impl AsR
 		.await?
 		.simd_json()
 		.await?;
+	println!(
+		"{}",
+		Url::parse_with_params(
+			if options.live_status { TANGO_LIVE_ENDPOINT } else { TANGO_REPLAY_ENDPOINT },
+			[("key", options.api_key.as_str()), ("prettyPrint", "false")]
+		)?
+	);
 	Ok(response)
+}
+
+pub async fn stream(
+	options: &RequestOptions,
+	continuation: impl AsRef<str>
+) -> Result<impl Stream<Item = Result<ChatMessage, YouTubeError>> + '_, YouTubeError> {
+	let initial_chat = fetch_yt_chat_page(options, continuation).await?;
+	let topic = initial_chat.continuation_contents.as_ref().unwrap().live_chat_continuation.continuations[0]
+		.invalidation_continuation_data
+		.as_ref()
+		.unwrap()
+		.invalidation_id
+		.topic
+		.to_owned();
+	let subscriber = SignalerChannel::new(topic).await?;
+	let (mut receiver, _handle) = subscriber.spawn_event_subscriber().await?;
+	Ok(async_stream::try_stream! {
+		let mut processor = YouTubeChatPageProcessor::new(initial_chat, options).unwrap();
+		for msg in &processor {
+			yield msg;
+		}
+
+		while receiver.recv().await.is_ok() {
+			match processor.cont().await {
+				Some(Ok(s)) => {
+					processor = s;
+					for msg in &processor {
+						yield msg;
+					}
+
+					subscriber.refresh_topic(processor.signaler_topic.as_ref().unwrap()).await;
+				}
+				Some(Err(e)) => {
+					eprintln!("{e:?}");
+					break;
+				}
+				None => {
+					eprintln!("none");
+					break;
+				}
+			}
+		}
+	})
 }
