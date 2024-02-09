@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::Deserialize;
+use serde::{de::Error, Deserialize, Deserializer};
+use serde_aux::field_attributes::deserialize_number_from_string;
 use simd_json::OwnedValue;
 
 pub mod get_live_chat;
@@ -103,4 +104,18 @@ pub struct Emoji {
 #[serde(rename_all = "camelCase")]
 pub struct Icon {
 	pub icon_type: String
+}
+
+pub fn deserialize_datetime_utc_from_microseconds<'de, D>(deserializer: D) -> Result<chrono::DateTime<chrono::Utc>, D::Error>
+where
+	D: Deserializer<'de>
+{
+	use chrono::prelude::*;
+
+	let number = deserialize_number_from_string::<i64, D>(deserializer)?;
+	let seconds = number / 1_000_000;
+	let micros = (number % 1_000_000) as u32;
+	let nanos = micros * 1_000;
+
+	Ok(Utc.from_utc_datetime(&NaiveDateTime::from_timestamp_opt(seconds, nanos).ok_or_else(|| D::Error::custom("Couldn't parse the timestamp"))?))
 }

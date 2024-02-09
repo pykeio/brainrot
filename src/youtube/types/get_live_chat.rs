@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_aux::prelude::*;
 use url::Url;
 
-use super::{Accessibility, CommandMetadata, Icon, ImageContainer, LocalizedText, UnlocalizedText};
+use super::{deserialize_datetime_utc_from_microseconds, Accessibility, CommandMetadata, Icon, ImageContainer, LocalizedText, UnlocalizedText};
 use crate::youtube::{
 	get_http_client,
 	util::{SimdJsonRequestBody, SimdJsonResponseBody},
@@ -183,7 +183,7 @@ pub struct MessageRendererBase {
 	pub author_badges: Option<Vec<AuthorBadge>>,
 	pub context_menu_endpoint: ContextMenuEndpoint,
 	pub id: String,
-	#[serde(deserialize_with = "deserialize_datetime_utc_from_milliseconds")]
+	#[serde(deserialize_with = "deserialize_datetime_utc_from_microseconds")]
 	pub timestamp_usec: DateTime<Utc>,
 	pub author_external_channel_id: String,
 	pub context_menu_accessibility: Accessibility
