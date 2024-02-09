@@ -12,12 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "twitch")]
-pub mod twitch;
-#[cfg(feature = "twitch")]
-pub use self::twitch::{Chat as TwitchChat, ChatEvent as TwitchChatEvent, MessageSegment as TwitchMessageSegment, TwitchIdentity};
+use std::env::args;
 
-#[cfg(feature = "youtube")]
-pub mod youtube;
+use brainrot::{twitch, TwitchChat, TwitchChatEvent};
+use futures_util::StreamExt;
 
-pub(crate) mod util;
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+	let mut client = TwitchChat::new(args().nth(1).as_deref().unwrap_or("miyukiwei"), twitch::Anonymous).await?;
+
+	while let Some(message) = client.next().await.transpose()? {
+		if let TwitchChatEvent::Message { user, contents, .. } = message {
+			println!("{}: {}", user.display_name, contents.iter().map(|c| c.to_string()).collect::<String>());
+		}
+	}
+
+	Ok(())
+}

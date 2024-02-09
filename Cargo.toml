@@ -1,24 +1,36 @@
 [package]
 name = "brainrot"
+description = "A live chat interface for Twitch & YouTube"
 version = "0.1.0"
+authors = [ "Carson M. <carson@pyke.io>" ]
+repository = "https://github.com/vitri-ent/brainrot"
 edition = "2021"
-rust-version = "1.64"
+rust-version = "1.75"
 
 [dependencies]
-irc = { version = "0.15", default-features = false }
-tokio = { version = "1", features = [ "net" ] }
+irc = { version = "0.15", optional = true, default-features = false }
+tokio = { version = "1", default-features = false, features = [ "net" ] }
 futures-util = { version = "0.3", default-features = false }
 thiserror = "1.0"
 chrono = { version = "0.4", default-features = false, features = [ "clock", "std" ] }
 serde = { version = "1.0", optional = true, features = [ "derive" ] }
-uuid = "1.5"
+serde-aux = { version = "4.4", optional = true }
+uuid = { version = "1.5", optional = true }
+reqwest = { version = "0.11", optional = true }
+simd-json = { version = "0.13", optional = true }
+url = { version = "2.5", optional = true }
+rand = { version = "0.8", optional = true }
+regex = { version = "1.10", optional = true }
+async-stream = "0.3"
 
 [dev-dependencies]
 anyhow = "1.0"
 tokio = { version = "1", features = [ "rt", "rt-multi-thread", "macros", "net" ] }
 
 [features]
-default = [ "tls-native" ]
-serde = [ "dep:serde", "chrono/serde", "uuid/serde" ]
-tls-native = [ "irc/tls-native" ]
-tls-rust = [ "irc/tls-rust" ]
+default = [ "tls-native", "twitch", "youtube" ]
+twitch = [ "dep:irc", "dep:uuid" ]
+youtube = [ "dep:simd-json", "dep:reqwest", "dep:rand", "dep:serde", "dep:url", "dep:regex", "dep:serde-aux" ]
+serde = [ "dep:serde", "chrono/serde", "uuid?/serde" ]
+tls-native = [ "irc?/tls-native" ]
+#tls-rust = [ "irc?/tls-rust" ]
