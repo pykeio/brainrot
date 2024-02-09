@@ -69,7 +69,8 @@ impl<'r> ActionChunk<'r> {
 		let continuation_token = match &response.continuation_contents.live_chat_continuation.continuations[0] {
 			Continuation::Invalidation { continuation, .. } => continuation.to_owned(),
 			Continuation::Timed { continuation, .. } => continuation.to_owned(),
-			Continuation::Replay { continuation, .. } => continuation.to_owned()
+			Continuation::Replay { continuation, .. } => continuation.to_owned(),
+			Continuation::PlayerSeek { .. } => return Err(Error::EndOfContinuation)
 		};
 		let signaler_topic = match &response.continuation_contents.live_chat_continuation.continuations[0] {
 			Continuation::Invalidation { invalidation_id, .. } => Some(invalidation_id.topic.to_owned()),
@@ -93,7 +94,7 @@ impl<'r> ActionChunk<'r> {
 					.ok_or(Error::EndOfContinuation)?
 					.into_iter()
 					.flat_map(|f| match f.action {
-						Action::ReplayChat { actions, .. } => actions,
+						Action::ReplayChat { actions, .. } => actions.into_iter().map(|f| f.action).collect(),
 						f => vec![f]
 					})
 					.collect()
@@ -159,8 +160,8 @@ pub async fn stream(options: &ChatContext) -> Result<Pin<Box<impl Stream<Item = 
 						}
 						Action::ReplayChat { actions, .. } => {
 							for action in actions {
-								if let Action::AddChatItem { .. } = action {
-									yield_tx.send(Ok(action.to_owned())).await;
+								if let Action::AddChatItem { .. } = action.action {
+									yield_tx.send(Ok(action.action.to_owned())).await;
 								}
 							}
 						}
@@ -187,8 +188,8 @@ pub async fn stream(options: &ChatContext) -> Result<Pin<Box<impl Stream<Item = 
 							}
 							Action::ReplayChat { actions, .. } => {
 								for action in actions {
-									if let Action::AddChatItem { .. } = action {
-										yield_tx.send(Ok(action.to_owned())).await;
+									if let Action::AddChatItem { .. } = action.action {
+										yield_tx.send(Ok(action.action.to_owned())).await;
 									}
 								}
 							}
@@ -232,8 +233,8 @@ pub async fn stream(options: &ChatContext) -> Result<Pin<Box<impl Stream<Item = 
 										}
 										Action::ReplayChat { actions, .. } => {
 											for action in actions {
-												if let Action::AddChatItem { .. } = action {
-													yield_tx.send(Ok(action.to_owned())).await;
+												if let Action::AddChatItem { .. } = action.action {
+													yield_tx.send(Ok(action.action.to_owned())).await;
 												}
 											}
 										}
@@ -255,38 +256,17 @@ pub async fn stream(options: &ChatContext) -> Result<Pin<Box<impl Stream<Item = 
 				}
 			}
 			Continuation::Replay { .. } => {
-				let chunk = ActionChunk::new(initial_chat, options).unwrap();
-				for action in chunk.iter() {
-					match action {
-						Action::AddChatItem { .. } => {
-							yield_tx.send(Ok(action.to_owned())).await;
-						}
-						Action::ReplayChat { actions, .. } => {
-							for action in actions {
-								if let Action::AddChatItem { .. } = action {
-									yield_tx.send(Ok(action.to_owned())).await;
-								}
-							}
-						}
-						action => {
-							yield_tx.send(Ok(action.to_owned())).await;
-						}
-					}
-				}
-
-				while let Some(Ok(chunk)) = chunk.cont().await {
+				let mut chunk = ActionChunk::new(initial_chat, options).unwrap();
+				loop {
 					for action in chunk.iter() {
 						match action {
-							Action::AddChatItem { item, .. } => {
-								if !seen_messages.contains(item.id()) {
-									yield_tx.send(Ok(action.to_owned())).await;
-									seen_messages.insert(item.id().to_owned());
-								}
+							Action::AddChatItem { .. } => {
+								yield_tx.send(Ok(action.to_owned())).await;
 							}
 							Action::ReplayChat { actions, .. } => {
 								for action in actions {
-									if let Action::AddChatItem { .. } = action {
-										yield_tx.send(Ok(action.to_owned())).await;
+									if let Action::AddChatItem { .. } = action.action {
+										yield_tx.send(Ok(action.action.to_owned())).await;
 									}
 								}
 							}
@@ -294,6 +274,10 @@ pub async fn stream(options: &ChatContext) -> Result<Pin<Box<impl Stream<Item = 
 								yield_tx.send(Ok(action.to_owned())).await;
 							}
 						}
+					}
+					match chunk.cont().await {
+						Some(Ok(e)) => chunk = e,
+						_ => break
 					}
 				}
 			}
@@ -311,8 +295,8 @@ pub async fn stream(options: &ChatContext) -> Result<Pin<Box<impl Stream<Item = 
 							}
 							Action::ReplayChat { actions, .. } => {
 								for action in actions {
-									if let Action::AddChatItem { .. } = action {
-										yield_tx.send(Ok(action.to_owned())).await;
+									if let Action::AddChatItem { .. } = action.action {
+										yield_tx.send(Ok(action.action.to_owned())).await;
 									}
 								}
 							}
@@ -328,6 +312,7 @@ pub async fn stream(options: &ChatContext) -> Result<Pin<Box<impl Stream<Item = 
 					}
 				}
 			}
+			Continuation::PlayerSeek { .. } => panic!("player seek should not be first continuation")
 		}
 	})))
 }

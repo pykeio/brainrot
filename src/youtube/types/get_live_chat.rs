@@ -92,7 +92,7 @@ pub struct LiveChatContinuation {
 	pub actions: Option<Vec<ActionContainer>>
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionContainer {
 	#[serde(flatten)]
@@ -115,7 +115,10 @@ pub enum Continuation {
 	Timed { timeout_ms: usize, continuation: String },
 	#[serde(rename = "liveChatReplayContinuationData")]
 	#[serde(rename_all = "camelCase")]
-	Replay { time_until_last_message_msec: usize, continuation: String }
+	Replay { time_until_last_message_msec: usize, continuation: String },
+	#[serde(rename = "playerSeekContinuationData")]
+	#[serde(rename_all = "camelCase")]
+	PlayerSeek { continuation: String }
 }
 
 #[derive(Deserialize, Debug)]
@@ -150,7 +153,7 @@ pub enum Action {
 	#[serde(rename = "replayChatItemAction")]
 	#[serde(rename_all = "camelCase")]
 	ReplayChat {
-		actions: Vec<Action>,
+		actions: Vec<ActionContainer>,
 		#[serde(deserialize_with = "deserialize_number_from_string")]
 		video_offset_time_msec: i64
 	},
@@ -243,6 +246,20 @@ pub enum ChatItem {
 		background_color: isize,
 		author_name_text_color: isize
 	},
+	#[serde(rename = "liveChatSponsorshipsGiftPurchaseAnnouncementRenderer")]
+	#[serde(rename_all = "camelCase")]
+	MembershipGift {
+		id: String,
+		#[serde(flatten)]
+		data: simd_json::OwnedValue
+	},
+	#[serde(rename = "liveChatSponsorshipsGiftRedemptionAnnouncementRenderer")]
+	#[serde(rename_all = "camelCase")]
+	MembershipGiftRedemption {
+		id: String,
+		#[serde(flatten)]
+		data: simd_json::OwnedValue
+	},
 	#[serde(rename = "liveChatViewerEngagementMessageRenderer")]
 	ViewerEngagement { id: String }
 }
@@ -254,6 +271,8 @@ impl ChatItem {
 			ChatItem::PaidSticker { message_renderer_base, .. } => &message_renderer_base.id,
 			ChatItem::Superchat { message_renderer_base, .. } => &message_renderer_base.id,
 			ChatItem::TextMessage { message_renderer_base, .. } => &message_renderer_base.id,
+			ChatItem::MembershipGift { id, .. } => id,
+			ChatItem::MembershipGiftRedemption { id, .. } => id,
 			ChatItem::ViewerEngagement { id } => id
 		}
 	}
