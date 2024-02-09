@@ -1,4 +1,35 @@
-use std::{collections::HashMap, io::BufRead, iter, sync::Arc};
+// Copyright 2024 pyke.io
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// /////////////////////////////////////////////// //
+//     In the realm of YouTube's code, beware,     //
+//     Where chaos reigns, and clarity's rare.     //
+//     Thirty hours deep, I dove with despair,     //
+//    Into the labyrinth of the Signaler lair.     //
+//                                                 //
+//   Oh, the trials faced, the struggles endured,  //
+//  As I wrestled with quirks, my sanity blurred.  //
+//      In the murky depths of DevTools' lair,     //
+//     I found myself lost, tangled in despair.    //
+//                                                 //
+//  So heed this warning, brave coder, take care,  //
+// As you venture forth, through Signaler's snare. //
+//     My code may be messy, a sight to beware,    //
+//   But through the chaos, a solution may glare.  //
+// /////////////////////////////////////////////// //
+
+use std::{collections::HashMap, io::BufRead, iter};
 
 use rand::Rng;
 use reqwest::{header, Response};
@@ -6,33 +37,29 @@ use simd_json::{
 	base::{ValueAsContainer, ValueAsScalar},
 	OwnedValue
 };
-use tokio::{
-	sync::{broadcast, Mutex},
-	task::JoinHandle
-};
 use url::Url;
 
-use super::{types::GetLiveChatResponse, util::SimdJsonResponseBody, YouTubeError};
+use super::{util::SimdJsonResponseBody, Error};
 
 const GCM_SIGNALER_SRQE: &str = "https://signaler-pa.youtube.com/punctual/v1/chooseServer";
 const GCM_SIGNALER_PSUB: &str = "https://signaler-pa.youtube.com/punctual/multi-watch/channel";
 
-const LIVE_CHAT_BASE_TANGO_KEY: &str = "AIzaSyDZNkyC-AtROwMBpLfevIvqYk-Gfi8ZOeo";
-
 #[derive(Debug, Default)]
-struct SignalerChannelInner {
-	topic: String,
+pub struct SignalerChannelInner {
+	pub(crate) topic: String,
+	tango_key: String,
 	gsessionid: Option<String>,
 	sid: Option<String>,
 	rid: usize,
-	aid: usize,
+	pub(crate) aid: usize,
 	session_n: usize
 }
 
 impl SignalerChannelInner {
-	pub fn with_topic(topic: impl ToString) -> Self {
+	pub fn with_topic(topic: impl ToString, tango_key: impl ToString) -> Self {
 		Self {
 			topic: topic.to_string(),
+			tango_key: tango_key.to_string(),
 			..Default::default()
 		}
 	}
@@ -51,9 +78,9 @@ impl SignalerChannelInner {
 		iter::repeat_with(|| CHARSET[rng.gen_range(0..CHARSET.len())] as char).take(11).collect()
 	}
 
-	pub async fn choose_server(&mut self) -> Result<(), YouTubeError> {
+	pub async fn choose_server(&mut self) -> Result<(), Error> {
 		let server_response: OwnedValue = super::get_http_client()
-			.post(Url::parse_with_params(GCM_SIGNALER_SRQE, [("key", LIVE_CHAT_BASE_TANGO_KEY)])?)
+			.post(Url::parse_with_params(GCM_SIGNALER_SRQE, [("key", &self.tango_key)])?)
 			.header(header::CONTENT_TYPE, "application/json+protobuf")
 			.body(format!(r#"[[null,null,null,[7,5],null,[["youtube_live_chat_web"],[1],[[["{}"]]]]]]"#, self.topic))
 			.send()
@@ -65,7 +92,7 @@ impl SignalerChannelInner {
 		Ok(())
 	}
 
-	pub async fn init_session(&mut self) -> Result<(), YouTubeError> {
+	pub async fn init_session(&mut self) -> Result<(), Error> {
 		let mut ofs_parameters = HashMap::new();
 		ofs_parameters.insert("count", "1".to_string());
 		ofs_parameters.insert("ofs", "0".to_string());
@@ -80,7 +107,7 @@ impl SignalerChannelInner {
 				[
 					("VER", "8"),
 					("gsessionid", self.gsessionid.as_ref().unwrap()),
-					("key", LIVE_CHAT_BASE_TANGO_KEY),
+					("key", &self.tango_key),
 					("RID", &self.rid.to_string()),
 					("AID", &self.aid.to_string()),
 					("CVER", "22"),
@@ -88,6 +115,9 @@ impl SignalerChannelInner {
 					("t", "1")
 				]
 			)?)
+			// yes, this is required. why? who the fuck knows! but if you don't provide this, you get the typical google
+			// robot error complaining about an invalid request body when you GET GCM_SIGNALER_PSUB. yes, invalid request
+			// body, in a GET request. where the error actually refers to this POST request. because that makes sense.
 			.header("X-WebChannel-Content-Type", "application/json+protobuf")
 			.form(&ofs_parameters)
 			.send()
@@ -96,20 +126,21 @@ impl SignalerChannelInner {
 		let mut ofs_res_line = ofs.bytes().await?.lines().nth(1).unwrap().unwrap();
 		let value: OwnedValue = unsafe { simd_json::from_str(&mut ofs_res_line) }?;
 		let value = value.as_array().unwrap()[0].as_array().unwrap();
+		// first value might be 1 if the request has an error, not entirely sure
 		assert_eq!(value[0].as_usize().unwrap(), 0);
 		let sid = value[1].as_array().unwrap()[1].as_str().unwrap();
 		self.sid = Some(sid.to_owned());
 		Ok(())
 	}
 
-	pub async fn get_session_stream(&self) -> Result<Response, YouTubeError> {
+	pub async fn get_session_stream(&self) -> Result<Response, Error> {
 		Ok(super::get_http_client()
 			.get(Url::parse_with_params(
 				GCM_SIGNALER_PSUB,
 				[
 					("VER", "8"),
 					("gsessionid", self.gsessionid.as_ref().unwrap()),
-					("key", LIVE_CHAT_BASE_TANGO_KEY),
+					("key", &self.tango_key),
 					("RID", "rpc"),
 					("SID", self.sid.as_ref().unwrap()),
 					("AID", &self.aid.to_string()),
@@ -122,80 +153,5 @@ impl SignalerChannelInner {
 			.header(header::CONNECTION, "keep-alive")
 			.send()
 			.await?)
-	}
-}
-
-#[derive(Debug)]
-pub struct SignalerChannel {
-	inner: Arc<Mutex<SignalerChannelInner>>
-}
-
-impl SignalerChannel {
-	pub async fn new(topic_id: impl ToString) -> Result<Self, YouTubeError> {
-		Ok(SignalerChannel {
-			inner: Arc::new(Mutex::new(SignalerChannelInner::with_topic(topic_id)))
-		})
-	}
-
-	pub async fn new_from_cont(cont: &GetLiveChatResponse) -> Result<Self, YouTubeError> {
-		Ok(SignalerChannel {
-			inner: Arc::new(Mutex::new(SignalerChannelInner::with_topic(
-				&cont.continuation_contents.as_ref().unwrap().live_chat_continuation.continuations[0]
-					.invalidation_continuation_data
-					.as_ref()
-					.unwrap()
-					.invalidation_id
-					.topic
-			)))
-		})
-	}
-
-	pub async fn refresh_topic(&self, topic: impl ToString) {
-		self.inner.lock().await.topic = topic.to_string();
-	}
-
-	pub async fn spawn_event_subscriber(&self) -> Result<(broadcast::Receiver<()>, JoinHandle<()>), YouTubeError> {
-		let inner = Arc::clone(&self.inner);
-		{
-			let mut lock = inner.lock().await;
-			lock.choose_server().await?;
-			lock.init_session().await?;
-		}
-		let (sender, receiver) = broadcast::channel(128);
-		let handle = tokio::spawn(async move {
-			'i: loop {
-				let mut req = {
-					let mut lock = inner.lock().await;
-					let _ = sender.send(());
-					lock.reset();
-					lock.choose_server().await.unwrap();
-					lock.init_session().await.unwrap();
-					lock.get_session_stream().await.unwrap()
-				};
-				loop {
-					match req.chunk().await {
-						Ok(None) => break,
-						Ok(Some(s)) => {
-							let mut ofs_res_line = s.lines().nth(1).unwrap().unwrap();
-							if let Ok(s) = unsafe { simd_json::from_str::<OwnedValue>(ofs_res_line.as_mut()) } {
-								let a = s.as_array().unwrap();
-								{
-									inner.lock().await.aid = a[a.len() - 1].as_array().unwrap()[0].as_usize().unwrap();
-								}
-							}
-
-							if sender.send(()).is_err() {
-								break 'i;
-							}
-						}
-						Err(e) => {
-							eprintln!("{e:?}");
-							break;
-						}
-					}
-				}
-			}
-		});
-		Ok((receiver, handle))
 	}
 }

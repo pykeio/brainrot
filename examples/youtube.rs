@@ -1,64 +1,39 @@
-use std::{future::IntoFuture, time::Duration};
+// Copyright 2024 pyke.io
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-use brainrot::youtube::{self, YouTubeChatPageProcessor};
-use tokio::time::sleep;
+use std::env::args;
+
+use brainrot::youtube::{self, Action, ChatItem};
+use futures_util::StreamExt;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-	let (options, cont) = youtube::get_options_from_live_page("J2YmJL0PX5M").await?;
-	let initial_chat = youtube::fetch_yt_chat_page(&options, &cont).await?;
-	if let Some(invalidation_continuation) = initial_chat.continuation_contents.as_ref().unwrap().live_chat_continuation.continuations[0]
-		.invalidation_continuation_data
-		.as_ref()
-	{
-		let topic = invalidation_continuation.invalidation_id.topic.to_owned();
-		let subscriber = youtube::SignalerChannel::new(topic).await?;
-		let (mut receiver, _handle) = subscriber.spawn_event_subscriber().await?;
-		tokio::spawn(async move {
-			let mut processor = YouTubeChatPageProcessor::new(initial_chat, &options).unwrap();
-			for msg in &processor {
-				println!("{}: {}", msg.author.display_name, msg.runs.iter().map(|c| c.to_string()).collect::<String>());
-			}
-
-			while receiver.recv().await.is_ok() {
-				match processor.cont().await {
-					Some(Ok(s)) => {
-						processor = s;
-						for msg in &processor {
-							println!("{}: {}", msg.author.display_name, msg.runs.iter().map(|c| c.to_string()).collect::<String>());
-						}
-
-						subscriber.refresh_topic(processor.signaler_topic.as_ref().unwrap()).await;
-					}
-					Some(Err(e)) => {
-						eprintln!("{e:?}");
-						break;
-					}
-					None => {
-						eprintln!("none");
-						break;
-					}
-				}
-			}
-		});
-		_handle.into_future().await.unwrap();
-	} else if let Some(timed_continuation) = initial_chat.continuation_contents.as_ref().unwrap().live_chat_continuation.continuations[0]
-		.timed_continuation_data
-		.as_ref()
-	{
-		let timeout = timed_continuation.timeout_ms as u64;
-		let mut processor = YouTubeChatPageProcessor::new(initial_chat, &options).unwrap();
-		loop {
-			for msg in &processor {
-				println!("{}: {}", msg.author.display_name, msg.runs.iter().map(|c| c.to_string()).collect::<String>());
-			}
-			sleep(Duration::from_millis(timeout as _)).await;
-			match processor.cont().await {
-				Some(Ok(e)) => processor = e,
-				_ => break
-			}
+	let context =
+		youtube::ChatContext::new_from_channel(args().nth(1).as_deref().unwrap_or("@miyukiwei"), youtube::ChannelSearchOptions::LatestLiveOrUpcoming).await?;
+	let mut stream = youtube::stream(&context).await?;
+	while let Some(Ok(c)) = stream.next().await {
+		if let Action::AddChatItem {
+			item: ChatItem::TextMessage { message_renderer_base, message },
+			..
+		} = c
+		{
+			println!(
+				"{}: {}",
+				message_renderer_base.author_name.unwrap().simple_text,
+				message.unwrap().runs.into_iter().map(|c| c.to_chat_string()).collect::<String>()
+			);
 		}
 	}
-	println!("???");
 	Ok(())
 }

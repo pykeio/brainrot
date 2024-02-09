@@ -9,7 +9,7 @@ rust-version = "1.75"
 
 [dependencies]
 irc = { version = "0.15", optional = true, default-features = false }
-tokio = { version = "1.0", default-features = false, features = [ "net" ] }
+tokio = { version = "1", default-features = false, features = [ "net" ] }
 futures-util = { version = "0.3", default-features = false }
 thiserror = "1.0"
 chrono = { version = "0.4", default-features = false, features = [ "clock", "std" ] }
