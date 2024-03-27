@@ -1,3 +1,4 @@
 {
+	"rust-analyzer.check.features": ["tls-native", "serde"],
 	"rust-analyzer.cargo.features": ["tls-native", "serde"]
 }

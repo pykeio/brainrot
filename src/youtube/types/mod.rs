@@ -117,5 +117,5 @@ where
 	let micros = (number % 1_000_000) as u32;
 	let nanos = micros * 1_000;
 
-	Ok(Utc.from_utc_datetime(&NaiveDateTime::from_timestamp_opt(seconds, nanos).ok_or_else(|| D::Error::custom("Couldn't parse the timestamp"))?))
+	DateTime::from_timestamp(seconds, nanos).ok_or_else(|| D::Error::custom("Couldn't parse the timestamp"))
 }
