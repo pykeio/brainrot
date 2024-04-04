@@ -145,6 +145,11 @@ pub enum Action {
 	RemoveChatItem {
 		target_item_id: String
 	},
+	#[serde(rename = "removeChatItemByAuthorAction")]
+	#[serde(rename_all = "camelCase")]
+	RemoveChatItemByAuthor {
+		external_channel_id: String
+	},
 	#[serde(rename = "addLiveChatTickerItemAction")]
 	#[serde(rename_all = "camelCase")]
 	AddLiveChatTicker {
