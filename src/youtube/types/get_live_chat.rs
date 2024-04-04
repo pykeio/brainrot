@@ -60,7 +60,7 @@ pub struct GetLiveChatRequestBodyContextClient {
 #[serde(rename_all = "camelCase")]
 pub struct GetLiveChatResponse {
 	pub response_context: Option<simd_json::OwnedValue>,
-	pub continuation_contents: GetLiveChatResponseContinuationContents
+	pub continuation_contents: Option<GetLiveChatResponseContinuationContents>
 }
 
 impl GetLiveChatResponse {

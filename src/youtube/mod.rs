@@ -66,20 +66,21 @@ unsafe impl<'r> Send for ActionChunk<'r> {}
 
 impl<'r> ActionChunk<'r> {
 	pub fn new(response: GetLiveChatResponse, ctx: &'r ChatContext) -> Result<Self, Error> {
-		let continuation_token = match &response.continuation_contents.live_chat_continuation.continuations[0] {
+		let continuation_contents = response.continuation_contents.ok_or(Error::EndOfContinuation)?;
+
+		let continuation_token = match &continuation_contents.live_chat_continuation.continuations[0] {
 			Continuation::Invalidation { continuation, .. } => continuation.to_owned(),
 			Continuation::Timed { continuation, .. } => continuation.to_owned(),
 			Continuation::Replay { continuation, .. } => continuation.to_owned(),
 			Continuation::PlayerSeek { .. } => return Err(Error::EndOfContinuation)
 		};
-		let signaler_topic = match &response.continuation_contents.live_chat_continuation.continuations[0] {
+		let signaler_topic = match &continuation_contents.live_chat_continuation.continuations[0] {
 			Continuation::Invalidation { invalidation_id, .. } => Some(invalidation_id.topic.to_owned()),
 			_ => None
 		};
 		Ok(Self {
 			actions: if ctx.live_status.updates_live() {
-				response
-					.continuation_contents
+				continuation_contents
 					.live_chat_continuation
 					.actions
 					.unwrap_or_default()
@@ -87,8 +88,7 @@ impl<'r> ActionChunk<'r> {
 					.map(|f| f.action)
 					.collect()
 			} else {
-				response
-					.continuation_contents
+				continuation_contents
 					.live_chat_continuation
 					.actions
 					.ok_or(Error::EndOfContinuation)?
@@ -109,14 +109,13 @@ impl<'r> ActionChunk<'r> {
 		self.actions.iter()
 	}
 
-	async fn next_page(&self, continuation_token: &String) -> Result<Self, Error> {
-		let page = GetLiveChatResponse::fetch(self.ctx, continuation_token).await?;
-		ActionChunk::new(page, self.ctx)
-	}
-
 	pub async fn cont(&self) -> Option<Result<Self, Error>> {
 		if let Some(continuation_token) = &self.continuation_token {
-			Some(self.next_page(continuation_token).await)
+			let page = match GetLiveChatResponse::fetch(self.ctx, continuation_token).await {
+				Err(e) => return Some(Err(e)),
+				Ok(page) => page
+			};
+			if page.continuation_contents.is_some() { Some(ActionChunk::new(page, self.ctx)) } else { None }
 		} else {
 			None
 		}
@@ -140,7 +139,7 @@ pub async fn stream(options: &ChatContext) -> Result<Pin<Box<impl Stream<Item = 
 	Ok(Box::pin(async_stream::__private::AsyncStream::new(yield_rx, async move {
 		let mut seen_messages = HashSet::new();
 
-		match &initial_chat.continuation_contents.live_chat_continuation.continuations[0] {
+		match &initial_chat.continuation_contents.as_ref().unwrap().live_chat_continuation.continuations[0] {
 			Continuation::Invalidation { invalidation_id, .. } => {
 				let topic = invalidation_id.topic.to_owned();
 
