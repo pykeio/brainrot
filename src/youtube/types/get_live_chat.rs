@@ -162,6 +162,12 @@ pub enum Action {
 		#[serde(deserialize_with = "deserialize_number_from_string")]
 		video_offset_time_msec: i64
 	},
+	#[serde(rename = "addBannerToLiveChatCommand")]
+	#[serde(rename_all = "camelCase")]
+	AddBannerToLiveChat {
+		#[serde(flatten)]
+		data: simd_json::OwnedValue
+	},
 	LiveChatReportModerationStateCommand(simd_json::OwnedValue)
 }
 
