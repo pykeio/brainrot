@@ -140,6 +140,12 @@ pub enum Action {
 		item: ChatItem,
 		client_id: Option<String>
 	},
+	#[serde(rename = "replaceChatItemAction")]
+	#[serde(rename_all = "camelCase")]
+	ReplaceChatItem {
+		target_item_id: String,
+		replacement_item: ChatItem
+	},
 	#[serde(rename = "removeChatItemAction")]
 	#[serde(rename_all = "camelCase")]
 	RemoveChatItem {
@@ -271,6 +277,13 @@ pub enum ChatItem {
 		#[serde(flatten)]
 		data: simd_json::OwnedValue
 	},
+	#[serde(rename = "liveChatPlaceholderItemRenderer")]
+	#[serde(rename_all = "camelCase")]
+	Placeholder {
+		id: String,
+		#[serde(deserialize_with = "deserialize_datetime_utc_from_microseconds")]
+		timestamp_usec: DateTime<Utc>
+	},
 	#[serde(rename = "liveChatViewerEngagementMessageRenderer")]
 	ViewerEngagement { id: String }
 }
@@ -284,6 +297,7 @@ impl ChatItem {
 			ChatItem::TextMessage { message_renderer_base, .. } => &message_renderer_base.id,
 			ChatItem::MembershipGift { id, .. } => id,
 			ChatItem::MembershipGiftRedemption { id, .. } => id,
+			ChatItem::Placeholder { id, .. } => id,
 			ChatItem::ViewerEngagement { id } => id
 		}
 	}
