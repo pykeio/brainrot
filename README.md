@@ -2,7 +2,7 @@
 A live chat interface for Twitch & YouTube written in Rust.
 
 ## Features
-- <img src="https://www.twitch.tv/favicon.ico" width="14" /> **Twitch**
+- <img src="https://upload.wikimedia.org/wikipedia/commons/d/d3/Twitch_Glitch_Logo_Purple.svg" width="14" /> **Twitch**
 	* ⚡ Live IRC
 	* 🔓 No authentication required
 - <img src="https://www.youtube.com/favicon.ico" width="14" /> **YouTube**
@@ -12,7 +12,7 @@ A live chat interface for Twitch & YouTube written in Rust.
 	* 🔓 No authentication required
 
 ## Usage
-See [`examples/twitch.rs`](https://github.com/vitri-ent/brainrot/blob/examples/twitch.rs) & [`examples/youtube.rs`](https://github.com/vitri-ent/brainrot/blob/examples/youtube.rs).
+See [`examples/twitch.rs`](https://github.com/vitri-ent/brainrot/blob/main/examples/twitch.rs) & [`examples/youtube.rs`](https://github.com/vitri-ent/brainrot/blob/main/examples/youtube.rs).
 
 ```shell
 $ cargo run --example twitch -- sinder
