@@ -2,6 +2,7 @@
 name = "brainrot"
 description = "A live chat interface for Twitch & YouTube"
 version = "0.1.0"
+license = "Apache-2.0"
 authors = [ "Carson M. <carson@pyke.io>" ]
 repository = "https://github.com/vitri-ent/brainrot"
 edition = "2021"
