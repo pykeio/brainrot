@@ -15,6 +15,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_aux::prelude::*;
+use simd_json::{base::ValueAsContainer, derived::ValueObjectAccessAsScalar};
 use url::Url;
 
 use super::{deserialize_datetime_utc_from_microseconds, Accessibility, CommandMetadata, Icon, ImageContainer, LocalizedText, UnlocalizedText};
@@ -136,31 +137,19 @@ pub struct InvalidationId {
 pub enum Action {
 	#[serde(rename = "addChatItemAction")]
 	#[serde(rename_all = "camelCase")]
-	AddChatItem {
-		item: ChatItem,
-		client_id: Option<String>
-	},
+	AddChatItem { item: ChatItem, client_id: Option<String> },
 	#[serde(rename = "replaceChatItemAction")]
 	#[serde(rename_all = "camelCase")]
-	ReplaceChatItem {
-		target_item_id: String,
-		replacement_item: ChatItem
-	},
+	ReplaceChatItem { target_item_id: String, replacement_item: ChatItem },
 	#[serde(rename = "removeChatItemAction")]
 	#[serde(rename_all = "camelCase")]
-	RemoveChatItem {
-		target_item_id: String
-	},
+	RemoveChatItem { target_item_id: String },
 	#[serde(rename = "removeChatItemByAuthorAction")]
 	#[serde(rename_all = "camelCase")]
-	RemoveChatItemByAuthor {
-		external_channel_id: String
-	},
+	RemoveChatItemByAuthor { external_channel_id: String },
 	#[serde(rename = "addLiveChatTickerItemAction")]
 	#[serde(rename_all = "camelCase")]
-	AddLiveChatTicker {
-		item: simd_json::OwnedValue
-	},
+	AddLiveChatTicker { item: simd_json::OwnedValue },
 	#[serde(rename = "replayChatItemAction")]
 	#[serde(rename_all = "camelCase")]
 	ReplayChat {
@@ -174,7 +163,8 @@ pub enum Action {
 		#[serde(flatten)]
 		data: simd_json::OwnedValue
 	},
-	LiveChatReportModerationStateCommand(simd_json::OwnedValue)
+	#[serde(rename = "liveChatReportModerationStateCommand")]
+	ReportModerationState(simd_json::OwnedValue)
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -285,7 +275,9 @@ pub enum ChatItem {
 		timestamp_usec: DateTime<Utc>
 	},
 	#[serde(rename = "liveChatViewerEngagementMessageRenderer")]
-	ViewerEngagement { id: String }
+	ViewerEngagement { id: String },
+	#[serde(untagged)]
+	Unknown(simd_json::OwnedValue)
 }
 
 impl ChatItem {
@@ -298,7 +290,8 @@ impl ChatItem {
 			ChatItem::MembershipGift { id, .. } => id,
 			ChatItem::MembershipGiftRedemption { id, .. } => id,
 			ChatItem::Placeholder { id, .. } => id,
-			ChatItem::ViewerEngagement { id } => id
+			ChatItem::ViewerEngagement { id } => id,
+			ChatItem::Unknown(_) => ""
 		}
 	}
 }
