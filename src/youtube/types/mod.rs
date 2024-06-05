@@ -25,7 +25,7 @@ pub struct CommandMetadata {
 	pub web_command_metadata: OwnedValue
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Default, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct UnlocalizedText {
 	pub simple_text: String,

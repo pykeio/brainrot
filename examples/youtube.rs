@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
 		{
 			println!(
 				"{}: {}",
-				message_renderer_base.author_name.unwrap().simple_text,
+				message_renderer_base.author_name.unwrap_or_default().simple_text,
 				message.unwrap().runs.into_iter().map(|c| c.to_chat_string()).collect::<String>()
 			);
 		}
