@@ -20,4 +20,9 @@ pub use self::twitch::{Chat as TwitchChat, ChatEvent as TwitchChatEvent, Message
 #[cfg(feature = "youtube")]
 pub mod youtube;
 
+#[cfg(all(feature = "twitch", feature = "youtube"))]
+mod multicast;
+#[cfg(all(feature = "twitch", feature = "youtube"))]
+pub use self::multicast::{Multicast, MulticastError, VariantChat};
+
 pub(crate) mod util;

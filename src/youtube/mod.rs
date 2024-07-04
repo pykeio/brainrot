@@ -131,7 +131,7 @@ impl<'r> IntoIterator for ActionChunk<'r> {
 	}
 }
 
-pub async fn stream(options: &ChatContext) -> Result<Pin<Box<impl Stream<Item = Result<Action, Error>> + '_>>, Error> {
+pub async fn stream(options: &ChatContext) -> Result<Pin<Box<dyn Stream<Item = Result<Action, Error>> + '_>>, Error> {
 	let initial_chat = GetLiveChatResponse::fetch(options, &options.initial_continuation).await?;
 
 	let (mut yield_tx, yield_rx) = unsafe { async_stream::__private::yielder::pair() };

@@ -17,12 +17,13 @@ chrono = { version = "0.4", default-features = false, features = [ "clock", "std
 serde = { version = "1.0", optional = true, features = [ "derive" ] }
 serde-aux = { version = "4.4", optional = true }
 uuid = { version = "1.5", optional = true }
-reqwest = { version = "0.12", optional = true }
+reqwest = { version = "0.12", default-features = false, optional = true, features = [ "charset", "http2" ] }
 simd-json = { version = "0.13", optional = true }
 url = { version = "2.5", optional = true }
 rand = { version = "0.8", optional = true }
 regex = { version = "1.10", optional = true }
 async-stream = "0.3"
+pin-project-lite = "0.2"
 
 [dev-dependencies]
 anyhow = "1.0"
@@ -33,5 +34,5 @@ default = [ "tls-native", "twitch", "youtube" ]
 twitch = [ "dep:irc", "dep:uuid" ]
 youtube = [ "dep:simd-json", "dep:reqwest", "dep:rand", "dep:serde", "dep:url", "dep:regex", "dep:serde-aux" ]
 serde = [ "dep:serde", "chrono/serde", "uuid?/serde" ]
-tls-native = [ "irc?/tls-native" ]
-tls-rust = [ "irc?/tls-rust" ]
+tls-native = [ "irc?/tls-native", "reqwest/native-tls" ]
+tls-rust = [ "irc?/tls-rust", "reqwest/rustls-tls" ]

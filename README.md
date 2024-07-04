@@ -10,6 +10,7 @@ A live chat interface for Twitch & YouTube written in Rust.
 	* ⚡ Low latency
 	* ⏪ Supports VODs
 	* 🔓 No authentication required
+- 🤝 **Simulcast** - Receive from multiple streams & platforms simultaneously
 
 ## Usage
 See [`examples/twitch.rs`](https://github.com/vitri-ent/brainrot/blob/main/examples/twitch.rs) & [`examples/youtube.rs`](https://github.com/vitri-ent/brainrot/blob/main/examples/youtube.rs).
