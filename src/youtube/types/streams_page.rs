@@ -58,8 +58,11 @@ pub struct BrowseEndpoint {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FeedContentsRenderer {
-	RichGridRenderer { contents: Vec<RichGridItem>, header: FeedHeaderRenderer },
-	SectionListRenderer { contents: Vec<simd_json::OwnedValue> }
+	RichGridRenderer {
+		contents: Vec<RichGridItem>
+	},
+	#[serde(other)]
+	Other
 }
 
 #[derive(Debug, Deserialize)]

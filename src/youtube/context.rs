@@ -108,7 +108,7 @@ impl ChatContext {
 				.ok_or_else(|| Error::NoMatchingStream(channel_id.to_string()))?
 			{
 				TabItemRenderer::TabRenderer { content, .. } => match content.as_ref().unwrap() {
-					FeedContentsRenderer::RichGridRenderer { contents, .. } => {
+					FeedContentsRenderer::RichGridRenderer { contents } => {
 						let finder = |c: &&RichGridItem| match c {
 							RichGridItem::RichItemRenderer { content, .. } => match content {
 								RichItemContent::VideoRenderer { thumbnail_overlays, video_id, .. } => thumbnail_overlays.iter().any(|c| match c {
@@ -145,7 +145,7 @@ impl ChatContext {
 						}
 						.ok_or_else(|| Error::NoMatchingStream(channel_id.to_string()))?
 					}
-					FeedContentsRenderer::SectionListRenderer { .. } => return Err(Error::NoMatchingStream(channel_id.to_string()))
+					_ => return Err(Error::NoMatchingStream(channel_id.to_string()))
 				},
 				TabItemRenderer::ExpandableTabRenderer { .. } => unreachable!()
 			}
