@@ -19,7 +19,7 @@ use std::{
 
 use futures_util::{Stream, StreamExt};
 use irc::{
-	client::{prelude::Config, Client, ClientStream},
+	client::{Client, ClientStream, prelude::Config},
 	proto::Capability
 };
 

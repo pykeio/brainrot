@@ -18,11 +18,10 @@ use serde_aux::prelude::*;
 use simd_json::{base::ValueAsContainer, derived::ValueObjectAccessAsScalar};
 use url::Url;
 
-use super::{deserialize_datetime_utc_from_microseconds, Accessibility, CommandMetadata, Icon, ImageContainer, LocalizedText, UnlocalizedText};
+use super::{Accessibility, CommandMetadata, Icon, ImageContainer, LocalizedText, UnlocalizedText, deserialize_datetime_utc_from_microseconds};
 use crate::youtube::{
-	get_http_client,
-	util::{SimdJsonRequestBody, SimdJsonResponseBody},
-	ChatContext, Error, TANGO_LIVE_ENDPOINT, TANGO_REPLAY_ENDPOINT
+	ChatContext, Error, TANGO_LIVE_ENDPOINT, TANGO_REPLAY_ENDPOINT, get_http_client,
+	util::{SimdJsonRequestBody, SimdJsonResponseBody}
 };
 
 #[derive(Serialize, Debug)]
@@ -68,10 +67,10 @@ impl GetLiveChatResponse {
 	pub async fn fetch(options: &ChatContext, continuation: impl AsRef<str>) -> Result<Self, Error> {
 		let body = GetLiveChatRequestBody::new(continuation.as_ref(), &options.client_version, "WEB");
 		Ok(get_http_client()
-			.post(Url::parse_with_params(
-				if options.live_status.updates_live() { TANGO_LIVE_ENDPOINT } else { TANGO_REPLAY_ENDPOINT },
-				[("key", options.api_key.as_str()), ("prettyPrint", "false")]
-			)?)
+			.post(Url::parse_with_params(if options.live_status.updates_live() { TANGO_LIVE_ENDPOINT } else { TANGO_REPLAY_ENDPOINT }, [
+				("key", options.api_key.as_str()),
+				("prettyPrint", "false")
+			])?)
 			.simd_json(&body)?
 			.send()
 			.await?

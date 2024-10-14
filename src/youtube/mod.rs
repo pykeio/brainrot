@@ -30,8 +30,8 @@ pub use self::{
 	context::{ChannelSearchOptions, ChatContext, LiveStreamStatus},
 	error::Error,
 	types::{
-		get_live_chat::{Action, ChatItem, MessageRendererBase},
-		ImageContainer, LocalizedRun, LocalizedText, Thumbnail, UnlocalizedText
+		ImageContainer, LocalizedRun, LocalizedText, Thumbnail, UnlocalizedText,
+		get_live_chat::{Action, ChatItem, MessageRendererBase}
 	}
 };
 use self::{

@@ -21,7 +21,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use irc::proto::{Command, Response};
 use uuid::Uuid;
 
-use crate::util::{get_utf8_slice, MapNonempty};
+use crate::util::{MapNonempty, get_utf8_slice};
 
 /// A user's role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,19 +125,16 @@ pub(crate) fn to_chat_event(message: irc::proto::Message) -> Option<ChatEvent> {
 				.collect::<HashMap<_, _>>();
 
 			let (username, user_display_name) = match message.prefix? {
-				irc::proto::Prefix::Nickname(n1, n2, _) => (
-					n1,
-					match tags.remove("display-name") {
-						Some(display_name) => {
-							if display_name.is_empty() {
-								n2
-							} else {
-								display_name
-							}
+				irc::proto::Prefix::Nickname(n1, n2, _) => (n1, match tags.remove("display-name") {
+					Some(display_name) => {
+						if display_name.is_empty() {
+							n2
+						} else {
+							display_name
 						}
-						None => n2
 					}
-				),
+					None => n2
+				}),
 				_ => return None
 			};
 

@@ -18,11 +18,10 @@ use regex::Regex;
 use url::Url;
 
 use super::{
-	get_http_client,
+	Error, get_http_client,
 	types::streams_page::{
 		FeedContentsRenderer, PageContentsRenderer, RichGridItem, RichItemContent, TabItemRenderer, ThumbnailOverlay, VideoTimeStatus, YouTubeInitialData
-	},
-	Error
+	}
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

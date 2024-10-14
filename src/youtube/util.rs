@@ -15,7 +15,7 @@
 use std::future::Future;
 
 use reqwest::{RequestBuilder, Response};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use super::Error;
 

@@ -14,7 +14,7 @@
 
 use std::env::args;
 
-use brainrot::{twitch, TwitchChat, TwitchChatEvent};
+use brainrot::{TwitchChat, TwitchChatEvent, twitch};
 use futures_util::StreamExt;
 
 #[tokio::main]
