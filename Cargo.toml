@@ -22,7 +22,7 @@ simd-json = { version = "0.13", optional = true }
 url = { version = "2.5", optional = true }
 rand = { version = "0.8", optional = true }
 regex = { version = "1.10", optional = true }
-async-stream = "0.3"
+async-stream-lite = "0.1"
 pin-project-lite = "0.2"
 
 [dev-dependencies]
