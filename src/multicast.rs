@@ -14,7 +14,7 @@
 
 use std::{pin::Pin, task::Poll};
 
-use futures_util::Stream;
+use futures_util::{Stream, stream::BoxStream};
 use pin_project_lite::pin_project;
 use thiserror::Error;
 
@@ -38,7 +38,7 @@ pin_project! {
 	#[project = VariantStreamProject]
 	enum VariantStream<'a> {
 		Twitch { #[pin] x: crate::twitch::Chat },
-		YouTube { #[pin] x: Pin<Box<dyn Stream<Item = Result<youtube::Action, youtube::Error>> + 'a>> }
+		YouTube { #[pin] x: BoxStream<'a, Result<youtube::Action, youtube::Error>> }
 	}
 }
 
@@ -63,8 +63,8 @@ impl<'a> From<crate::twitch::Chat> for VariantStream<'a> {
 	}
 }
 
-impl<'a> From<Pin<Box<dyn Stream<Item = Result<youtube::Action, youtube::Error>> + 'a>>> for VariantStream<'a> {
-	fn from(value: Pin<Box<dyn Stream<Item = Result<youtube::Action, youtube::Error>> + 'a>>) -> Self {
+impl<'a> From<BoxStream<'a, Result<youtube::Action, youtube::Error>>> for VariantStream<'a> {
+	fn from(value: BoxStream<'a, Result<youtube::Action, youtube::Error>>) -> Self {
 		Self::YouTube { x: value }
 	}
 }
