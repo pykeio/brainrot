@@ -135,7 +135,7 @@ impl<'r> IntoIterator for ActionChunk<'r> {
 pub async fn stream(options: &ChatContext) -> Result<BoxStream<'_, Result<Action, Error>>, Error> {
 	let initial_chat = GetLiveChatResponse::fetch(options, &options.initial_continuation).await?;
 
-	Ok(Box::pin(try_async_stream(|r#yield| async move {
+	Ok(Box::pin(try_async_stream(|yielder| async move {
 		let mut seen_messages = HashSet::new();
 
 		match &initial_chat.continuation_contents.as_ref().unwrap().live_chat_continuation.continuations[0] {
@@ -152,19 +152,19 @@ pub async fn stream(options: &ChatContext) -> Result<BoxStream<'_, Result<Action
 					match action {
 						Action::AddChatItem { item, .. } => {
 							if !seen_messages.contains(item.id()) {
-								r#yield(action.to_owned()).await;
+								yielder.r#yield(action.to_owned()).await;
 								seen_messages.insert(item.id().to_owned());
 							}
 						}
 						Action::ReplayChat { actions, .. } => {
 							for action in actions {
 								if let Action::AddChatItem { .. } = action.action {
-									r#yield(action.action.to_owned()).await;
+									yielder.r#yield(action.action.to_owned()).await;
 								}
 							}
 						}
 						action => {
-							r#yield(action.to_owned()).await;
+							yielder.r#yield(action.to_owned()).await;
 						}
 					}
 				}
@@ -180,19 +180,19 @@ pub async fn stream(options: &ChatContext) -> Result<BoxStream<'_, Result<Action
 						match action {
 							Action::AddChatItem { item, .. } => {
 								if !seen_messages.contains(item.id()) {
-									r#yield(action.to_owned()).await;
+									yielder.r#yield(action.to_owned()).await;
 									seen_messages.insert(item.id().to_owned());
 								}
 							}
 							Action::ReplayChat { actions, .. } => {
 								for action in actions {
 									if let Action::AddChatItem { .. } = action.action {
-										r#yield(action.action.to_owned()).await;
+										yielder.r#yield(action.action.to_owned()).await;
 									}
 								}
 							}
 							action => {
-								r#yield(action.to_owned()).await;
+								yielder.r#yield(action.to_owned()).await;
 							}
 						}
 					}
@@ -225,19 +225,19 @@ pub async fn stream(options: &ChatContext) -> Result<BoxStream<'_, Result<Action
 									match action {
 										Action::AddChatItem { item, .. } => {
 											if !seen_messages.contains(item.id()) {
-												r#yield(action.to_owned()).await;
+												yielder.r#yield(action.to_owned()).await;
 												seen_messages.insert(item.id().to_owned());
 											}
 										}
 										Action::ReplayChat { actions, .. } => {
 											for action in actions {
 												if let Action::AddChatItem { .. } = action.action {
-													r#yield(action.action.to_owned()).await;
+													yielder.r#yield(action.action.to_owned()).await;
 												}
 											}
 										}
 										action => {
-											r#yield(action.to_owned()).await;
+											yielder.r#yield(action.to_owned()).await;
 										}
 									}
 								}
@@ -259,17 +259,17 @@ pub async fn stream(options: &ChatContext) -> Result<BoxStream<'_, Result<Action
 					for action in chunk.iter() {
 						match action {
 							Action::AddChatItem { .. } => {
-								r#yield(action.to_owned()).await;
+								yielder.r#yield(action.to_owned()).await;
 							}
 							Action::ReplayChat { actions, .. } => {
 								for action in actions {
 									if let Action::AddChatItem { .. } = action.action {
-										r#yield(action.action.to_owned()).await;
+										yielder.r#yield(action.action.to_owned()).await;
 									}
 								}
 							}
 							action => {
-								r#yield(action.to_owned()).await;
+								yielder.r#yield(action.to_owned()).await;
 							}
 						}
 					}
@@ -287,19 +287,19 @@ pub async fn stream(options: &ChatContext) -> Result<BoxStream<'_, Result<Action
 						match action {
 							Action::AddChatItem { item, .. } => {
 								if !seen_messages.contains(item.id()) {
-									r#yield(action.to_owned()).await;
+									yielder.r#yield(action.to_owned()).await;
 									seen_messages.insert(item.id().to_owned());
 								}
 							}
 							Action::ReplayChat { actions, .. } => {
 								for action in actions {
 									if let Action::AddChatItem { .. } = action.action {
-										r#yield(action.action.to_owned()).await;
+										yielder.r#yield(action.action.to_owned()).await;
 									}
 								}
 							}
 							action => {
-								r#yield(action.to_owned()).await;
+								yielder.r#yield(action.to_owned()).await;
 							}
 						}
 					}
