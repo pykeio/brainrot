@@ -15,7 +15,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_aux::prelude::*;
-use simd_json::{base::ValueAsContainer, derived::ValueObjectAccessAsScalar};
 use url::Url;
 
 use super::{Accessibility, CommandMetadata, Icon, ImageContainer, LocalizedText, UnlocalizedText, deserialize_datetime_utc_from_microseconds};

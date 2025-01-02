@@ -1,4 +1,4 @@
-// Copyright 2024 pyke.io
+// Copyright 2025 pyke.io
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,30 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// /////////////////////////////////////////////// //
-//     In the realm of YouTube's code, beware,     //
-//     Where chaos reigns, and clarity's rare.     //
-//     Thirty hours deep, I dove with despair,     //
-//    Into the labyrinth of the Signaler lair.     //
-//                                                 //
-//   Oh, the trials faced, the struggles endured,  //
-//  As I wrestled with quirks, my sanity blurred.  //
-//      In the murky depths of DevTools' lair,     //
-//     I found myself lost, tangled in despair.    //
-//                                                 //
-//  So heed this warning, brave coder, take care,  //
-// As you venture forth, through Signaler's snare. //
-//     My code may be messy, a sight to beware,    //
-//   But through the chaos, a solution may glare.  //
-// /////////////////////////////////////////////// //
-
 use std::{collections::HashMap, io::BufRead, iter};
 
 use rand::Rng;
 use reqwest::{Response, header};
 use simd_json::{
 	OwnedValue,
-	base::{ValueAsContainer, ValueAsScalar}
+	base::{ValueAsArray, ValueAsScalar}
 };
 use url::Url;
 

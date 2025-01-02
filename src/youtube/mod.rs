@@ -17,7 +17,7 @@ use std::{collections::HashSet, io::BufRead, sync::OnceLock, time::Duration};
 use async_stream_lite::try_async_stream;
 use futures_util::stream::BoxStream;
 use reqwest::header::{self, HeaderMap, HeaderValue};
-use simd_json::base::{ValueAsContainer, ValueAsScalar};
+use simd_json::base::{ValueAsArray, ValueAsScalar};
 use thiserror::Error;
 use tokio::time::sleep;
 
