@@ -1,7 +1,7 @@
 [package]
 name = "brainrot"
 description = "A live chat interface for Twitch & YouTube"
-version = "0.2.0"
+version = "0.2.1"
 license = "Apache-2.0"
 keywords = [ "chat", "twitch", "youtube", "live" ]
 authors = [ "Carson M. <carson@pyke.io>" ]
