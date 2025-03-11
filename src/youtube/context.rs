@@ -263,7 +263,7 @@ impl ChatContext {
 		CHANNEL_RE
 			.get_or_init(|| Regex::new(r#"^(?:https?:\/\/)?(?:www\.)?youtube\.com\/(?:channel\/(UC[\w-]{21}[AQgw])|(@[\w]+))$"#).unwrap())
 			.captures(url)
-			.and_then(|c| c.get(1))
+			.and_then(|c| c.get(1).or_else(|| c.get(2)))
 			.map(|c| c.as_str())
 	}
 
