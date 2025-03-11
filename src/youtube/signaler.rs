@@ -57,8 +57,10 @@ impl SignalerChannelInner {
 
 	fn gen_zx() -> String {
 		const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
-		let mut rng = rand::thread_rng();
-		iter::repeat_with(|| CHARSET[rng.gen_range(0..CHARSET.len())] as char).take(11).collect()
+		let mut rng = rand::rng();
+		iter::repeat_with(|| CHARSET[rng.random_range(0..CHARSET.len())] as char)
+			.take(11)
+			.collect()
 	}
 
 	pub async fn choose_server(&mut self) -> Result<(), Error> {

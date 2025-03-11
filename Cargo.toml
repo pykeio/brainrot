@@ -21,7 +21,7 @@ uuid = { version = "1.11", optional = true }
 reqwest = { version = "0.12", default-features = false, optional = true, features = [ "charset", "http2" ] }
 simd-json = { version = "0.14", optional = true }
 url = { version = "2.5", optional = true }
-rand = { version = "0.8", optional = true }
+rand = { version = "0.9", optional = true }
 regex = { version = "1.11", optional = true }
 async-stream-lite = "0.2"
 pin-project-lite = "0.2"
