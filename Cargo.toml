@@ -1,11 +1,11 @@
 [package]
 name = "brainrot"
 description = "A live chat interface for Twitch & YouTube"
-version = "0.2.1"
+version = "0.2.2"
 license = "Apache-2.0"
 keywords = [ "chat", "twitch", "youtube", "live" ]
 authors = [ "Carson M. <carson@pyke.io>" ]
-repository = "https://github.com/vitri-ent/brainrot"
+repository = "https://github.com/pykeio/brainrot"
 edition = "2021"
 rust-version = "1.75"
 
