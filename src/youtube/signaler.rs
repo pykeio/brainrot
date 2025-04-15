@@ -67,7 +67,7 @@ impl SignalerChannelInner {
 		let server_response: OwnedValue = super::get_http_client()
 			.post(Url::parse_with_params(GCM_SIGNALER_SRQE, [("key", &self.tango_key)])?)
 			.header(header::CONTENT_TYPE, "application/json+protobuf")
-			.body(format!(r#"[[null,null,null,[7,5],null,[["youtube_live_chat_web"],[1],[[["{}"]]]]]]"#, self.topic))
+			.body(format!(r#"[[null,null,null,[8,5],null,[["youtube_live_chat_web"],[1],[[["{}"]]]]]]"#, self.topic))
 			.send()
 			.await?
 			.simd_json()
@@ -83,7 +83,7 @@ impl SignalerChannelInner {
 		ofs_parameters.insert("ofs", "0".to_string());
 		ofs_parameters.insert(
 			"req0___data__",
-			format!(r#"[[["1",[null,null,null,[7,5],null,[["youtube_live_chat_web"],[1],[[["{}"]]]],null,null,1],null,3]]]"#, self.topic)
+			format!(r#"[[["1",[null,null,null,[8,5],null,[["youtube_live_chat_web"],[1],[[["{}"]]]],null,null,1],null,3]]]"#, self.topic)
 		);
 		self.session_n = 1;
 		let ofs = super::get_http_client()
@@ -94,7 +94,6 @@ impl SignalerChannelInner {
 					("gsessionid", self.gsessionid.as_ref().unwrap()),
 					("key", &self.tango_key),
 					("RID", &self.rid.to_string()),
-					("AID", &self.aid.to_string()),
 					("CVER", "22"),
 					("zx", Self::gen_zx().as_ref()),
 					("t", "1")
