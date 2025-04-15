@@ -66,16 +66,15 @@ impl GetLiveChatResponse {
 	pub async fn fetch(options: &ChatContext, continuation: impl AsRef<str>) -> Result<Self, Error> {
 		let body = GetLiveChatRequestBody::new(continuation.as_ref(), &options.client_version, "WEB");
 		Ok(get_http_client()
-			.post(Url::parse_with_params(if options.live_status.updates_live() { TANGO_LIVE_ENDPOINT } else { TANGO_REPLAY_ENDPOINT }, [
-				("key", options.api_key.as_str()),
-				("prettyPrint", "false")
-			])?)
+			.post(Url::parse_with_params(
+				if options.live_status.updates_live() { TANGO_LIVE_ENDPOINT } else { TANGO_REPLAY_ENDPOINT },
+				[("key", options.api_key.as_str()), ("prettyPrint", "false")]
+			)?)
 			.simd_json(&body)?
 			.send()
 			.await?
 			.simd_json()
-			.await
-			.unwrap())
+			.await?)
 	}
 }
 

@@ -49,7 +49,7 @@ pub(crate) fn get_http_client() -> &'static reqwest::Client {
 		let mut headers = HeaderMap::new();
 		// Set our Accept-Language to en-US so we can properly match substrings
 		headers.append(header::ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.5"));
-		headers.append(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0"));
+		headers.append(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0"));
 		// Referer is required by Signaler endpoints.
 		headers.append(header::REFERER, HeaderValue::from_static("https://www.youtube.com/"));
 		reqwest::Client::builder().default_headers(headers).build().unwrap()
@@ -172,7 +172,9 @@ pub async fn stream(options: &ChatContext) -> Result<BoxStream<'_, Result<Action
 				'i: loop {
 					match chunk.cont().await {
 						Some(Ok(c)) => chunk = c,
-						Some(Err(err)) => eprintln!("{err:?}"),
+						Some(Err(e)) => {
+							tracing::error!(source = ?e, trigger = "between-sessions", "Failed to fetch continuation");
+						}
 						_ => break 'i
 					};
 
@@ -216,7 +218,9 @@ pub async fn stream(options: &ChatContext) -> Result<BoxStream<'_, Result<Action
 
 								match chunk.cont().await {
 									Some(Ok(c)) => chunk = c,
-									Some(Err(err)) => eprintln!("{err:?}"),
+									Some(Err(e)) => {
+										tracing::error!(source = ?e, trigger = "signal", "Failed to fetch continuation");
+									}
 									_ => break 'i
 								};
 								channel.topic = chunk.signaler_topic.clone().unwrap();
@@ -244,7 +248,7 @@ pub async fn stream(options: &ChatContext) -> Result<BoxStream<'_, Result<Action
 							}
 							Ok(None) => break,
 							Err(e) => {
-								eprintln!("{e:?}");
+								tracing::error!(source = ?e, "Signaler stream errored");
 								break;
 							}
 						}

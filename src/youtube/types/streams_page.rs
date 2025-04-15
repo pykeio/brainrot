@@ -31,28 +31,12 @@ pub enum PageContentsRenderer {
 #[serde(rename_all = "camelCase")]
 pub enum TabItemRenderer {
 	TabRenderer {
-		endpoint: FeedEndpoint,
 		title: String,
 		#[serde(default)]
 		selected: bool,
 		content: Option<FeedContentsRenderer>
 	},
 	ExpandableTabRenderer {}
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FeedEndpoint {
-	pub browse_endpoint: BrowseEndpoint,
-	pub command_metadata: CommandMetadata
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BrowseEndpoint {
-	pub browse_id: String,
-	pub params: String,
-	pub canonical_base_url: String
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,7 +63,6 @@ pub enum RichGridItem {
 pub enum RichItemContent {
 	#[serde(rename_all = "camelCase")]
 	VideoRenderer {
-		description_snippet: LocalizedText,
 		thumbnail: ImageContainer,
 		thumbnail_overlays: Vec<ThumbnailOverlay>,
 		video_id: String
