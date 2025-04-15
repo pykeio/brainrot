@@ -120,18 +120,21 @@ impl SignalerChannelInner {
 
 	pub async fn get_session_stream(&self) -> Result<Response, Error> {
 		Ok(super::get_http_client()
-			.get(Url::parse_with_params(GCM_SIGNALER_PSUB, [
-				("VER", "8"),
-				("gsessionid", self.gsessionid.as_ref().unwrap()),
-				("key", &self.tango_key),
-				("RID", "rpc"),
-				("SID", self.sid.as_ref().unwrap()),
-				("AID", &self.aid.to_string()),
-				("CI", "0"),
-				("TYPE", "xmlhttp"),
-				("zx", &Self::gen_zx()),
-				("t", "1")
-			])?)
+			.get(Url::parse_with_params(
+				GCM_SIGNALER_PSUB,
+				[
+					("VER", "8"),
+					("gsessionid", self.gsessionid.as_ref().unwrap()),
+					("key", &self.tango_key),
+					("RID", "rpc"),
+					("SID", self.sid.as_ref().unwrap()),
+					("AID", &self.aid.to_string()),
+					("CI", "0"),
+					("TYPE", "xmlhttp"),
+					("zx", &Self::gen_zx()),
+					("t", "1")
+				]
+			)?)
 			.header(header::CONNECTION, "keep-alive")
 			.send()
 			.await?)
