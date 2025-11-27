@@ -220,20 +220,10 @@ impl ChatContext {
 			None => "2.20240207.07.00".to_string()
 		};
 
-		static LIVE_CONTINUATION_REGEX: OnceLock<Regex> = OnceLock::new();
-		static REPLAY_CONTINUATION_REGEX: OnceLock<Regex> = OnceLock::new();
-		let continuation_regex = if live_status.updates_live() {
-			LIVE_CONTINUATION_REGEX.get_or_init(|| Regex::new(
-				r#"Live chat['"],\s*['"]selected['"]:\s*(?:true|false),\s*['"]continuation['"]:\s*\{\s*['"]reloadContinuationData['"]:\s*\{['"]continuation['"]:\s*['"](.+?)['"]"#
-			).unwrap())
-		} else {
-			REPLAY_CONTINUATION_REGEX.get_or_init(|| {
-				Regex::new(
-					r#"Top chat replay['"],\s*['"]selected['"]:\s*true,\s*['"]continuation['"]:\s*\{\s*['"]reloadContinuationData['"]:\s*\{['"]continuation['"]:\s*['"](.+?)['"]"#
-				)
-				.unwrap()
-			})
-		};
+		static CONTINUATION_REGEX: OnceLock<Regex> = OnceLock::new();
+		let continuation_regex = CONTINUATION_REGEX.get_or_init(|| {
+			Regex::new(r#"['"]continuations['"]:\s*\[\{\s*['"]reloadContinuationData['"]:\s*\{['"]continuation['"]:\s*['"](.+?)['"]"#).unwrap()
+		});
 		let continuation = match continuation_regex.captures(&page_contents).and_then(|captures| captures.get(1)) {
 			Some(matched) => matched.as_str().to_string(),
 			None => return Err(Error::NoChatContinuation)

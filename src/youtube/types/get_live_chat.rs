@@ -68,7 +68,7 @@ impl GetLiveChatResponse {
 		Ok(get_http_client()
 			.post(Url::parse_with_params(
 				if options.live_status.updates_live() { TANGO_LIVE_ENDPOINT } else { TANGO_REPLAY_ENDPOINT },
-				[("key", options.api_key.as_str()), ("prettyPrint", "false")]
+				[("prettyPrint", "false")]
 			)?)
 			.simd_json(&body)?
 			.send()
