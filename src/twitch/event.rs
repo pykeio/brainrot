@@ -14,10 +14,10 @@
 
 use std::{
 	collections::HashMap,
+	fmt,
 	num::{NonZeroU16, NonZeroU32}
 };
 
-use chrono::{DateTime, TimeZone, Utc};
 use irc::proto::{Command, Response};
 use uuid::Uuid;
 
@@ -81,11 +81,11 @@ pub enum MessageSegment {
 	}
 }
 
-impl ToString for MessageSegment {
-	fn to_string(&self) -> String {
+impl fmt::Display for MessageSegment {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			Self::Text { text } => text.to_owned(),
-			Self::Emote { name, .. } => name.to_owned()
+			Self::Text { text } => f.write_str(text),
+			Self::Emote { name, .. } => f.write_str(name)
 		}
 	}
 }
@@ -95,7 +95,7 @@ pub enum ChatEvent {
 	Message {
 		id: Uuid,
 		user: User,
-		sent_at: DateTime<Utc>,
+		sent_at_ms: i64,
 		reply_to: Option<Uuid>,
 		emote_only: bool,
 		first_message: bool,
@@ -105,7 +105,7 @@ pub enum ChatEvent {
 		id: Uuid,
 		user: User,
 		bits: NonZeroU32,
-		sent_at: DateTime<Utc>,
+		sent_at_ms: i64,
 		segments: Vec<MessageSegment>
 	},
 	MemberChunk {
@@ -230,19 +230,23 @@ pub(crate) fn to_chat_event(message: irc::proto::Message) -> Option<ChatEvent> {
 			};
 
 			let id = tags.remove("id").and_then(|f| f.parse().ok())?;
-			let sent_at = Utc
-				.timestamp_opt(tags.remove("tmi-sent-ts").and_then(|f| f.parse::<i64>().map(|f| f / 1000).ok())?, 0)
-				.latest()?;
+			let sent_at = tags.remove("tmi-sent-ts").and_then(|f| f.parse::<i64>().ok())?;
 
 			if let Some(bits) = tags.remove("bits").and_then_nonempty(|f| f.parse().ok()) {
-				return Some(ChatEvent::SendBits { id, user, bits, sent_at, segments });
+				return Some(ChatEvent::SendBits {
+					id,
+					user,
+					bits,
+					sent_at_ms: sent_at,
+					segments
+				});
 			}
 
 			Some(ChatEvent::Message {
 				id,
 				user,
 				reply_to: tags.remove("reply-parent-msg-id").and_then(|f| f.parse().ok()),
-				sent_at,
+				sent_at_ms: sent_at,
 				emote_only: matches!(tags.remove("emote-only").as_deref(), Some("1")),
 				first_message: matches!(tags.remove("first-msg").as_deref(), Some("1")),
 				contents: segments

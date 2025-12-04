@@ -14,26 +14,55 @@
 
 use std::env::args;
 
-use brainrot::youtube::{self, Action, ChatItem};
+use brainrot::youtube::{self, ChatEvent, RequestExecutor, Response, StreamChatMode, StreamContext};
 use futures_util::StreamExt;
+
+#[derive(Debug, Default)]
+struct ReqwestExecutor(reqwest::Client);
+
+impl RequestExecutor for ReqwestExecutor {
+	type Response = Respownse;
+	type Error = reqwest::Error;
+
+	async fn make_request(&self, req: http::Request<bytes::Bytes>) -> Result<Self::Response, Self::Error> {
+		self.0.execute(req.try_into().unwrap()).await.map(Respownse)
+	}
+}
+
+#[derive(Debug)]
+struct Respownse(reqwest::Response);
+
+impl Response for Respownse {
+	type Error = reqwest::Error;
+
+	fn status_code(&self) -> u16 {
+		self.0.status().as_u16()
+	}
+
+	async fn recv_chunk(&mut self) -> Result<Option<bytes::Bytes>, Self::Error> {
+		self.0.chunk().await
+	}
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-	let context =
-		youtube::ChatContext::new_from_channel(args().nth(1).as_deref().unwrap_or("@miyukiwei"), youtube::ChannelSearchOptions::LatestLiveOrUpcoming).await?;
-	let mut stream = youtube::stream(&context).await?;
-	while let Some(Ok(c)) = stream.next().await {
-		if let Action::AddChatItem {
-			item: ChatItem::TextMessage { message_renderer_base, message },
-			..
-		} = c
-		{
-			println!(
-				"{}: {}",
-				message_renderer_base.author_name.unwrap_or_default().simple_text,
-				message.unwrap().runs.into_iter().map(|c| c.to_chat_string()).collect::<String>()
-			);
+	let client = youtube::Client::<ReqwestExecutor>::default();
+	let streams = youtube::query_channel(args().nth(1).as_deref().unwrap_or("@miyukiwei"), &client).await?;
+
+	let context = StreamContext::new(client, streams[0].id(), StreamChatMode::Live).await?;
+	let mut chat = youtube::Chat::new(context).await?;
+
+	for event in chat.initial_events() {
+		match event {
+			ChatEvent::Message { text } => println!("{text}")
 		}
 	}
+
+	while let Some(event) = chat.next().await.transpose()? {
+		match event {
+			ChatEvent::Message { text } => println!("{text}")
+		}
+	}
+
 	Ok(())
 }

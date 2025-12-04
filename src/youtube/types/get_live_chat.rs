@@ -12,145 +12,101 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_aux::prelude::*;
-use url::Url;
 
-use super::{Accessibility, CommandMetadata, Icon, ImageContainer, LocalizedText, UnlocalizedText, deserialize_datetime_utc_from_microseconds};
-use crate::youtube::{
-	ChatContext, Error, TANGO_LIVE_ENDPOINT, TANGO_REPLAY_ENDPOINT, get_http_client,
-	util::{SimdJsonRequestBody, SimdJsonResponseBody}
-};
+use super::{Accessibility, Icon, ImageContainer, LocalizedText, UnlocalizedText, deserialize_number_from_string};
 
 #[derive(Serialize, Debug)]
-pub struct GetLiveChatRequestBody {
-	context: GetLiveChatRequestBodyContext,
-	continuation: String
-}
-
-impl GetLiveChatRequestBody {
-	pub(crate) fn new(continuation: impl Into<String>, client_version: impl Into<String>, client_name: impl Into<String>) -> Self {
-		Self {
-			context: GetLiveChatRequestBodyContext {
-				client: GetLiveChatRequestBodyContextClient {
-					client_version: client_version.into(),
-					client_name: client_name.into()
-				}
-			},
-			continuation: continuation.into()
-		}
-	}
-}
-
-#[derive(Serialize, Debug)]
-pub struct GetLiveChatRequestBodyContext {
-	client: GetLiveChatRequestBodyContextClient
-}
-
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct GetLiveChatRequestBodyContextClient {
-	client_version: String,
-	client_name: String
+pub struct GetLiveChatRequest<'s> {
+	pub continuation: &'s str
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct GetLiveChatResponse {
-	pub response_context: Option<simd_json::OwnedValue>,
-	pub continuation_contents: Option<GetLiveChatResponseContinuationContents>
-}
-
-impl GetLiveChatResponse {
-	pub async fn fetch(options: &ChatContext, continuation: impl AsRef<str>) -> Result<Self, Error> {
-		let body = GetLiveChatRequestBody::new(continuation.as_ref(), &options.client_version, "WEB");
-		Ok(get_http_client()
-			.post(Url::parse_with_params(
-				if options.live_status.updates_live() { TANGO_LIVE_ENDPOINT } else { TANGO_REPLAY_ENDPOINT },
-				[("prettyPrint", "false")]
-			)?)
-			.simd_json(&body)?
-			.send()
-			.await?
-			.simd_json()
-			.await?)
-	}
+pub struct GetLiveChatResponse<'s> {
+	#[serde(borrow)]
+	pub continuation_contents: Option<GetLiveChatResponseContinuationContents<'s>>
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct GetLiveChatResponseContinuationContents {
-	pub live_chat_continuation: LiveChatContinuation
+pub struct GetLiveChatResponseContinuationContents<'s> {
+	#[serde(borrow)]
+	pub live_chat_continuation: LiveChatContinuation<'s>
 }
 
 #[derive(Deserialize, Debug)]
-pub struct LiveChatContinuation {
-	pub continuations: Vec<Continuation>,
-	pub actions: Option<Vec<ActionContainer>>
+pub struct LiveChatContinuation<'s> {
+	#[serde(borrow)]
+	pub continuations: Vec<Continuation<'s>>,
+	#[serde(borrow)]
+	pub actions: Option<Vec<ActionContainer<'s>>>
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ActionContainer {
-	#[serde(flatten)]
-	pub action: Action,
-	pub click_tracking_params: Option<String>
+pub struct ActionContainer<'s> {
+	#[serde(borrow, flatten)]
+	pub action: Action<'s>
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub enum Continuation {
+pub enum Continuation<'s> {
 	#[serde(rename = "invalidationContinuationData")]
 	#[serde(rename_all = "camelCase")]
 	Invalidation {
-		invalidation_id: InvalidationId,
-		timeout_ms: usize,
-		continuation: String
+		#[serde(borrow)]
+		invalidation_id: InvalidationId<'s>,
+		// timeout_ms: usize,
+		continuation: &'s str
 	},
 	#[serde(rename = "timedContinuationData")]
 	#[serde(rename_all = "camelCase")]
-	Timed { timeout_ms: usize, continuation: String },
+	Timed { timeout_ms: usize, continuation: &'s str },
 	#[serde(rename = "liveChatReplayContinuationData")]
 	#[serde(rename_all = "camelCase")]
-	Replay { time_until_last_message_msec: usize, continuation: String },
+	Replay { continuation: &'s str },
 	#[serde(rename = "playerSeekContinuationData")]
 	#[serde(rename_all = "camelCase")]
-	PlayerSeek { continuation: String }
+	#[allow(unused)]
+	PlayerSeek { continuation: &'s str }
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct InvalidationId {
-	pub object_source: usize,
-	pub object_id: String,
-	pub topic: String,
-	pub subscribe_to_gcm_topics: bool,
-	pub proto_creation_timestamp_ms: String
+pub struct InvalidationId<'s> {
+	pub topic: &'s str
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub enum Action {
+pub enum Action<'s> {
 	#[serde(rename = "addChatItemAction")]
 	#[serde(rename_all = "camelCase")]
-	AddChatItem { item: ChatItem, client_id: Option<String> },
+	AddChatItem {
+		#[serde(borrow)]
+		item: ChatItem<'s>,
+		client_id: Option<&'s str>
+	},
 	#[serde(rename = "replaceChatItemAction")]
 	#[serde(rename_all = "camelCase")]
-	ReplaceChatItem { target_item_id: String, replacement_item: ChatItem },
+	ReplaceChatItem {
+		target_item_id: &'s str,
+		#[serde(borrow)]
+		replacement_item: ChatItem<'s>
+	},
 	#[serde(rename = "removeChatItemAction")]
 	#[serde(rename_all = "camelCase")]
-	RemoveChatItem { target_item_id: String },
+	RemoveChatItem { target_item_id: &'s str },
 	#[serde(rename = "removeChatItemByAuthorAction")]
 	#[serde(rename_all = "camelCase")]
-	RemoveChatItemByAuthor { external_channel_id: String },
-	#[serde(rename = "addLiveChatTickerItemAction")]
-	#[serde(rename_all = "camelCase")]
-	AddLiveChatTicker { item: simd_json::OwnedValue },
+	RemoveChatItemByAuthor { external_channel_id: &'s str },
 	#[serde(rename = "replayChatItemAction")]
 	#[serde(rename_all = "camelCase")]
 	ReplayChat {
-		actions: Vec<ActionContainer>,
+		#[serde(borrow)]
+		actions: Vec<ActionContainer<'s>>,
 		#[serde(deserialize_with = "deserialize_number_from_string")]
 		video_offset_time_msec: i64
 	},
@@ -166,62 +122,58 @@ pub enum Action {
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct AuthorBadge {
-	pub live_chat_author_badge_renderer: LiveChatAuthorBadgeRenderer
+pub struct AuthorBadge<'s> {
+	#[serde(borrow)]
+	pub live_chat_author_badge_renderer: LiveChatAuthorBadgeRenderer<'s>
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct LiveChatAuthorBadgeRenderer {
-	pub custom_thumbnail: Option<ImageContainer>,
-	pub icon: Option<Icon>,
-	pub tooltip: String,
-	pub accessibility: Accessibility
+pub struct LiveChatAuthorBadgeRenderer<'s> {
+	#[serde(borrow)]
+	pub custom_thumbnail: Option<ImageContainer<'s>>,
+	#[serde(borrow)]
+	pub icon: Option<Icon<'s>>,
+	pub tooltip: &'s str,
+	#[serde(borrow)]
+	pub accessibility: Accessibility<'s>
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct MessageRendererBase {
-	pub author_name: Option<UnlocalizedText>,
-	pub author_photo: ImageContainer,
-	pub author_badges: Option<Vec<AuthorBadge>>,
-	pub context_menu_endpoint: ContextMenuEndpoint,
-	pub id: String,
-	#[serde(deserialize_with = "deserialize_datetime_utc_from_microseconds")]
-	pub timestamp_usec: DateTime<Utc>,
-	pub author_external_channel_id: String,
-	pub context_menu_accessibility: Accessibility
+pub struct MessageRendererBase<'s> {
+	pub id: &'s str,
+	#[serde(borrow)]
+	pub author_name: Option<UnlocalizedText<'s>>,
+	#[serde(borrow)]
+	pub author_photo: ImageContainer<'s>,
+	#[serde(borrow)]
+	pub author_badges: Option<Vec<AuthorBadge<'s>>>,
+	#[serde(deserialize_with = "deserialize_number_from_string")]
+	pub timestamp_usec: i64,
+	pub author_external_channel_id: &'s str
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ContextMenuEndpoint {
-	pub command_metadata: CommandMetadata,
-	pub live_chat_item_context_menu_endpoint: LiveChatItemContextMenuEndpoint
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct LiveChatItemContextMenuEndpoint {
-	pub params: String
-}
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub enum ChatItem {
+pub enum ChatItem<'s> {
 	#[serde(rename = "liveChatTextMessageRenderer")]
 	#[serde(rename_all = "camelCase")]
 	TextMessage {
-		#[serde(flatten)]
-		message_renderer_base: MessageRendererBase,
-		message: Option<LocalizedText>
+		#[serde(borrow, flatten)]
+		message_renderer_base: MessageRendererBase<'s>,
+		#[serde(borrow)]
+		message: Option<LocalizedText<'s>>
 	},
 	#[serde(rename = "liveChatPaidMessageRenderer")]
 	#[serde(rename_all = "camelCase")]
 	Superchat {
-		#[serde(flatten)]
-		message_renderer_base: MessageRendererBase,
-		message: Option<LocalizedText>,
-		purchase_amount_text: UnlocalizedText,
+		#[serde(borrow, flatten)]
+		message_renderer_base: MessageRendererBase<'s>,
+		#[serde(borrow)]
+		message: Option<LocalizedText<'s>>,
+		#[serde(borrow)]
+		purchase_amount_text: UnlocalizedText<'s>,
 		header_background_color: isize,
 		header_text_color: isize,
 		body_background_color: isize,
@@ -231,18 +183,22 @@ pub enum ChatItem {
 	#[serde(rename = "liveChatMembershipItemRenderer")]
 	#[serde(rename_all = "camelCase")]
 	MembershipItem {
-		#[serde(flatten)]
-		message_renderer_base: MessageRendererBase,
-		header_sub_text: Option<LocalizedText>,
-		author_badges: Option<Vec<AuthorBadge>>
+		#[serde(borrow, flatten)]
+		message_renderer_base: MessageRendererBase<'s>,
+		#[serde(borrow)]
+		header_sub_text: Option<LocalizedText<'s>>,
+		#[serde(borrow)]
+		author_badges: Option<Vec<AuthorBadge<'s>>>
 	},
 	#[serde(rename = "liveChatPaidStickerRenderer")]
 	#[serde(rename_all = "camelCase")]
 	PaidSticker {
-		#[serde(flatten)]
-		message_renderer_base: MessageRendererBase,
-		purchase_amount_text: UnlocalizedText,
-		sticker: ImageContainer,
+		#[serde(borrow, flatten)]
+		message_renderer_base: MessageRendererBase<'s>,
+		#[serde(borrow)]
+		purchase_amount_text: UnlocalizedText<'s>,
+		#[serde(borrow)]
+		sticker: ImageContainer<'s>,
 		money_chip_background_color: isize,
 		money_chip_text_color: isize,
 		sticker_display_width: isize,
@@ -268,8 +224,8 @@ pub enum ChatItem {
 	#[serde(rename_all = "camelCase")]
 	Placeholder {
 		id: String,
-		#[serde(deserialize_with = "deserialize_datetime_utc_from_microseconds")]
-		timestamp_usec: DateTime<Utc>
+		#[serde(deserialize_with = "deserialize_number_from_string")]
+		timestamp_usec: i64
 	},
 	#[serde(rename = "liveChatViewerEngagementMessageRenderer")]
 	ViewerEngagement { id: String },
@@ -277,13 +233,13 @@ pub enum ChatItem {
 	Unknown(simd_json::OwnedValue)
 }
 
-impl ChatItem {
+impl ChatItem<'_> {
 	pub fn id(&self) -> &str {
 		match self {
-			ChatItem::MembershipItem { message_renderer_base, .. } => &message_renderer_base.id,
-			ChatItem::PaidSticker { message_renderer_base, .. } => &message_renderer_base.id,
-			ChatItem::Superchat { message_renderer_base, .. } => &message_renderer_base.id,
-			ChatItem::TextMessage { message_renderer_base, .. } => &message_renderer_base.id,
+			ChatItem::MembershipItem { message_renderer_base, .. } => message_renderer_base.id,
+			ChatItem::PaidSticker { message_renderer_base, .. } => message_renderer_base.id,
+			ChatItem::Superchat { message_renderer_base, .. } => message_renderer_base.id,
+			ChatItem::TextMessage { message_renderer_base, .. } => message_renderer_base.id,
 			ChatItem::MembershipGift { id, .. } => id,
 			ChatItem::MembershipGiftRedemption { id, .. } => id,
 			ChatItem::Placeholder { id, .. } => id,

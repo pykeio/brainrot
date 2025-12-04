@@ -12,310 +12,344 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashSet, io::BufRead, sync::OnceLock, time::Duration};
+use std::{error::Error as StdError, fmt, io::BufRead, pin::Pin, task::Poll};
 
 use async_stream_lite::try_async_stream;
-use futures_util::stream::BoxStream;
-use reqwest::header::{self, HeaderMap, HeaderValue};
+use futures_util::{Stream, stream::BoxStream};
+use pin_project_lite::pin_project;
 use simd_json::base::{ValueAsArray, ValueAsScalar};
-use thiserror::Error;
-use tokio::time::sleep;
 
+mod client;
 mod context;
-mod error;
 mod signaler;
 mod types;
 mod util;
 
+use self::{
+	client::ResponseExt,
+	signaler::SignalerChannel,
+	types::get_live_chat::{Continuation, GetLiveChatRequest, GetLiveChatResponse},
+	util::{TANGO_API_KEY, stringify_runs}
+};
 pub use self::{
-	context::{ChannelSearchOptions, ChatContext, LiveStreamStatus},
-	error::Error,
+	client::{Client, ClientError, InnertubeError, RequestExecutor, Response},
+	context::{StreamChatMode, StreamContext},
 	types::{
 		ImageContainer, LocalizedRun, LocalizedText, Thumbnail, UnlocalizedText,
 		get_live_chat::{Action, ChatItem, MessageRendererBase}
-	}
+	},
+	util::query_channel
 };
-use self::{
-	signaler::SignalerChannelInner,
-	types::get_live_chat::{Continuation, GetLiveChatResponse}
-};
+use crate::youtube::signaler::SignalerError;
 
-const TANGO_LIVE_ENDPOINT: &str = "https://www.youtube.com/youtubei/v1/live_chat/get_live_chat";
-const TANGO_REPLAY_ENDPOINT: &str = "https://www.youtube.com/youtubei/v1/live_chat/get_live_chat_replay";
-
-pub(crate) fn get_http_client() -> &'static reqwest::Client {
-	static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-	HTTP_CLIENT.get_or_init(|| {
-		let mut headers = HeaderMap::new();
-		// Set our Accept-Language to en-US so we can properly match substrings
-		headers.append(header::ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.5"));
-		headers.append(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0"));
-		// Referer is required by Signaler endpoints.
-		headers.append(header::REFERER, HeaderValue::from_static("https://www.youtube.com/"));
-		reqwest::Client::builder().default_headers(headers).build().unwrap()
-	})
+#[derive(Debug)]
+pub enum ChatEvent {
+	Message { text: String }
 }
 
-struct ActionChunk<'r> {
-	actions: Vec<Action>,
-	ctx: &'r ChatContext,
-	continuation_token: Option<String>,
-	pub(crate) signaler_topic: Option<String>
-}
-
-unsafe impl<'r> Send for ActionChunk<'r> {}
-
-impl<'r> ActionChunk<'r> {
-	pub fn new(response: GetLiveChatResponse, ctx: &'r ChatContext) -> Result<Self, Error> {
-		let continuation_contents = response.continuation_contents.ok_or(Error::EndOfContinuation)?;
-
-		let continuation_token = match &continuation_contents.live_chat_continuation.continuations[0] {
-			Continuation::Invalidation { continuation, .. } => continuation.to_owned(),
-			Continuation::Timed { continuation, .. } => continuation.to_owned(),
-			Continuation::Replay { continuation, .. } => continuation.to_owned(),
-			Continuation::PlayerSeek { .. } => return Err(Error::EndOfContinuation)
-		};
-		let signaler_topic = match &continuation_contents.live_chat_continuation.continuations[0] {
-			Continuation::Invalidation { invalidation_id, .. } => Some(invalidation_id.topic.to_owned()),
+impl ChatEvent {
+	pub(crate) fn from_action(action: &Action<'_>) -> Option<Self> {
+		match action {
+			Action::AddChatItem { item, .. } => match item {
+				ChatItem::TextMessage { message_renderer_base, message } => message.as_ref().map(|x| ChatEvent::Message { text: stringify_runs(&x.runs) }),
+				_ => None
+			},
+			Action::ReplayChat { .. } => unreachable!("ReplayChat should be collapsed"),
 			_ => None
+		}
+	}
+}
+
+pin_project! {
+	pub struct Chat<E: RequestExecutor> {
+		initial_events: Vec<ChatEvent>,
+		#[pin]
+		stream: BoxStream<'static, Result<ChatEvent, ChatError<E>>>
+	}
+}
+
+impl<E: RequestExecutor> Chat<E> {
+	pub async fn new(context: StreamContext<E>) -> Result<Self, ChatError<E>> {
+		let mut initial_continuation_bytes = if !context.is_replay {
+			context
+				.client
+				.chat_live(GetLiveChatRequest {
+					continuation: &context.initial_continuation
+				})
+				.await?
+		} else {
+			context
+				.client
+				.chat_replay(GetLiveChatRequest {
+					continuation: &context.initial_continuation
+				})
+				.await?
+		}
+		.with_innertube_error()
+		.await?
+		.recv_all()
+		.await
+		.map_err(ChatError::Receive)?;
+		let initial_continuation: GetLiveChatResponse<'_> = simd_json::from_slice(&mut initial_continuation_bytes)?;
+
+		let Some(contents) = initial_continuation.continuation_contents else {
+			return Err(ChatError::NoChat);
 		};
-		Ok(Self {
-			actions: if ctx.live_status.updates_live() {
-				continuation_contents
+
+		match &contents.live_chat_continuation.continuations[0] {
+			Continuation::Invalidation { invalidation_id, continuation, .. } => {
+				let continuation_token = continuation.to_string();
+
+				let mut channel = SignalerChannel::with_topic(invalidation_id.topic, TANGO_API_KEY);
+
+				let initial_events = contents
 					.live_chat_continuation
 					.actions
 					.unwrap_or_default()
 					.into_iter()
-					.map(|f| f.action)
-					.collect()
-			} else {
-				continuation_contents
-					.live_chat_continuation
-					.actions
-					.ok_or(Error::EndOfContinuation)?
-					.into_iter()
-					.flat_map(|f| match f.action {
-						Action::ReplayChat { actions, .. } => actions.into_iter().map(|f| f.action).collect(),
-						f => vec![f]
-					})
-					.collect()
-			},
-			ctx,
-			continuation_token: Some(continuation_token),
-			signaler_topic
-		})
-	}
+					.filter_map(|act| ChatEvent::from_action(&act.action))
+					.collect();
+				let _ = initial_continuation;
+				let _ = initial_continuation_bytes;
 
-	pub fn iter(&self) -> std::slice::Iter<'_, Action> {
-		self.actions.iter()
-	}
+				Ok(Self {
+					initial_events,
+					stream: Box::pin(try_async_stream(move |yielder| async move {
+						let mut continuation_token = continuation_token;
+						'i: loop {
+							let mut continuation_bytes = context
+								.client
+								.chat_live(GetLiveChatRequest { continuation: &continuation_token })
+								.await?
+								.with_innertube_error()
+								.await?
+								.recv_all()
+								.await
+								.map_err(ChatError::Receive)?;
+							let continuation: GetLiveChatResponse<'_> = simd_json::from_slice(&mut continuation_bytes)?;
+							let Some(contents) = continuation.continuation_contents else {
+								break;
+							};
 
-	pub async fn cont(&self) -> Option<Result<Self, Error>> {
-		if let Some(continuation_token) = &self.continuation_token {
-			let page = match GetLiveChatResponse::fetch(self.ctx, continuation_token).await {
-				Err(e) => return Some(Err(e)),
-				Ok(page) => page
-			};
-			if page.continuation_contents.is_some() { Some(ActionChunk::new(page, self.ctx)) } else { None }
-		} else {
-			None
-		}
-	}
-}
-
-impl<'r> IntoIterator for ActionChunk<'r> {
-	type Item = Action;
-	type IntoIter = std::vec::IntoIter<Action>;
-
-	fn into_iter(self) -> Self::IntoIter {
-		self.actions.into_iter()
-	}
-}
-
-pub async fn stream(options: &ChatContext) -> Result<BoxStream<'_, Result<Action, Error>>, Error> {
-	let initial_chat = GetLiveChatResponse::fetch(options, &options.initial_continuation).await?;
-
-	Ok(Box::pin(try_async_stream(|yielder| async move {
-		let mut seen_messages = HashSet::new();
-
-		match &initial_chat.continuation_contents.as_ref().unwrap().live_chat_continuation.continuations[0] {
-			Continuation::Invalidation { invalidation_id, .. } => {
-				let topic = invalidation_id.topic.to_owned();
-
-				let mut chunk = ActionChunk::new(initial_chat, options)?;
-
-				let mut channel = SignalerChannelInner::with_topic(topic, options.tango_api_key.as_ref().unwrap());
-				channel.choose_server().await?;
-				channel.init_session().await?;
-
-				for action in chunk.iter() {
-					match action {
-						Action::AddChatItem { item, .. } => {
-							if !seen_messages.contains(item.id()) {
-								yielder.r#yield(action.to_owned()).await;
-								seen_messages.insert(item.id().to_owned());
+							for event in contents
+								.live_chat_continuation
+								.actions
+								.unwrap_or_default()
+								.into_iter()
+								.filter_map(|act| ChatEvent::from_action(&act.action))
+							{
+								yielder.r#yield(event).await;
 							}
-						}
-						Action::ReplayChat { actions, .. } => {
-							for action in actions {
-								if let Action::AddChatItem { .. } = action.action {
-									yielder.r#yield(action.action.to_owned()).await;
-								}
-							}
-						}
-						action => {
-							yielder.r#yield(action.to_owned()).await;
-						}
-					}
-				}
 
-				'i: loop {
-					match chunk.cont().await {
-						Some(Ok(c)) => chunk = c,
-						Some(Err(e)) => {
-							tracing::error!(source = ?e, trigger = "between-sessions", "Failed to fetch continuation");
-						}
-						_ => break 'i
-					};
+							let Some(Continuation::Invalidation { continuation: next_token, .. }) = contents.live_chat_continuation.continuations.first()
+							else {
+								break;
+							};
 
-					for action in chunk.iter() {
-						match action {
-							Action::AddChatItem { item, .. } => {
-								if !seen_messages.contains(item.id()) {
-									yielder.r#yield(action.to_owned()).await;
-									seen_messages.insert(item.id().to_owned());
-								}
-							}
-							Action::ReplayChat { actions, .. } => {
-								for action in actions {
-									if let Action::AddChatItem { .. } = action.action {
-										yielder.r#yield(action.action.to_owned()).await;
-									}
-								}
-							}
-							action => {
-								yielder.r#yield(action.to_owned()).await;
-							}
-						}
-					}
+							continuation_token.clear();
+							continuation_token.push_str(next_token);
 
-					let mut req = {
-						channel.reset();
-						channel.choose_server().await?;
-						channel.init_session().await?;
-						channel.get_session_stream().await?
-					};
-					loop {
-						match req.chunk().await {
-							Ok(Some(s)) => {
-								let mut ofs_res_line = s.lines().nth(1).unwrap().unwrap();
-								if let Ok(s) = unsafe { simd_json::from_str::<simd_json::OwnedValue>(ofs_res_line.as_mut()) } {
-									let a = s.as_array().unwrap();
-									{
-										channel.aid = a[a.len() - 1].as_array().unwrap()[0].as_usize().unwrap();
-									}
-								}
+							let _ = continuation;
+							let _ = continuation_bytes;
 
-								match chunk.cont().await {
-									Some(Ok(c)) => chunk = c,
-									Some(Err(e)) => {
-										tracing::error!(source = ?e, trigger = "signal", "Failed to fetch continuation");
-									}
-									_ => break 'i
-								};
-								channel.topic = chunk.signaler_topic.clone().unwrap();
+							let mut req = {
+								channel.reset();
+								channel.choose_server(&context.client).await?;
+								channel.init_session(&context.client).await?;
+								channel.get_session_stream(&context.client).await?
+							};
+							loop {
+								match req.recv_chunk().await {
+									Ok(Some(s)) => {
+										let Some(mut ofs_res_line) = s.lines().nth(1).transpose().expect("infallible") else {
+											break;
+										};
 
-								for action in chunk.iter() {
-									match action {
-										Action::AddChatItem { item, .. } => {
-											if !seen_messages.contains(item.id()) {
-												yielder.r#yield(action.to_owned()).await;
-												seen_messages.insert(item.id().to_owned());
-											}
-										}
-										Action::ReplayChat { actions, .. } => {
-											for action in actions {
-												if let Action::AddChatItem { .. } = action.action {
-													yielder.r#yield(action.action.to_owned()).await;
+										if let Ok(s) = unsafe { simd_json::from_str::<simd_json::OwnedValue>(ofs_res_line.as_mut()) } {
+											if let Some(a) = s.as_array() {
+												// channel.aid = a[a.len() - 1].as_array().unwrap()[0].as_usize().unwrap();
+												if let Some(aid) = a.last().and_then(|x| x.as_array()).and_then(|x| x.first()).and_then(|x| x.as_usize()) {
+													channel.aid = aid;
 												}
 											}
 										}
-										action => {
-											yielder.r#yield(action.to_owned()).await;
-										}
-									}
-								}
-							}
-							Ok(None) => break,
-							Err(e) => {
-								tracing::error!(source = ?e, "Signaler stream errored");
-								break;
-							}
-						}
-					}
 
-					seen_messages.clear();
-				}
-			}
-			Continuation::Replay { .. } => {
-				let mut chunk = ActionChunk::new(initial_chat, options)?;
-				loop {
-					for action in chunk.iter() {
-						match action {
-							Action::AddChatItem { .. } => {
-								yielder.r#yield(action.to_owned()).await;
-							}
-							Action::ReplayChat { actions, .. } => {
-								for action in actions {
-									if let Action::AddChatItem { .. } = action.action {
-										yielder.r#yield(action.action.to_owned()).await;
+										let mut continuation = context
+											.client
+											.chat_live(GetLiveChatRequest { continuation: &continuation_token })
+											.await?
+											.with_innertube_error()
+											.await?
+											.recv_all()
+											.await
+											.map_err(ChatError::Receive)?;
+										let continuation: GetLiveChatResponse<'_> = simd_json::from_slice(&mut continuation)?;
+										let Some(contents) = continuation.continuation_contents else {
+											break 'i;
+										};
+
+										for event in contents
+											.live_chat_continuation
+											.actions
+											.unwrap_or_default()
+											.into_iter()
+											.filter_map(|act| ChatEvent::from_action(&act.action))
+										{
+											yielder.r#yield(event).await;
+										}
+
+										let Some(Continuation::Invalidation { continuation: next_token, .. }) =
+											contents.live_chat_continuation.continuations.first()
+										else {
+											break 'i;
+										};
+
+										continuation_token.clear();
+										continuation_token.push_str(next_token);
+									}
+									Ok(None) => break,
+									Err(e) => {
+										tracing::error!(source = ?e, "signaler stream errored");
+										break;
 									}
 								}
 							}
-							action => {
-								yielder.r#yield(action.to_owned()).await;
-							}
 						}
-					}
-					match chunk.cont().await {
-						Some(Ok(e)) => chunk = e,
-						_ => break
-					}
-				}
+						Ok(())
+					}))
+				})
 			}
-			Continuation::Timed { timeout_ms, .. } => {
-				let timeout = Duration::from_millis(*timeout_ms as _);
-				let mut chunk = ActionChunk::new(initial_chat, options)?;
-				loop {
-					for action in chunk.iter() {
-						match action {
-							Action::AddChatItem { item, .. } => {
-								if !seen_messages.contains(item.id()) {
-									yielder.r#yield(action.to_owned()).await;
-									seen_messages.insert(item.id().to_owned());
+			Continuation::Replay { continuation, .. } => {
+				let continuation_token = continuation.to_string();
+				let events: Vec<ChatEvent> = contents
+					.live_chat_continuation
+					.actions
+					.unwrap_or_default()
+					.into_iter()
+					.filter_map(|act| ChatEvent::from_action(&act.action))
+					.collect();
+
+				let _ = initial_continuation;
+				let _ = initial_continuation_bytes;
+
+				Ok(Self {
+					initial_events: Vec::default(),
+					stream: Box::pin(try_async_stream(move |yielder| async move {
+						let mut continuation_token = continuation_token;
+						let mut events = events;
+						loop {
+							for event in events.drain(..) {
+								yielder.r#yield(event).await;
+							}
+
+							let mut continuation = context
+								.client
+								.chat_replay(GetLiveChatRequest { continuation: &continuation_token })
+								.await?
+								.with_innertube_error()
+								.await?
+								.recv_all()
+								.await
+								.map_err(ChatError::Receive)?;
+							let continuation: GetLiveChatResponse<'_> = simd_json::from_slice(&mut continuation)?;
+							let Some(contents) = continuation.continuation_contents else {
+								break;
+							};
+
+							for action in contents.live_chat_continuation.actions.unwrap_or_default() {
+								if let Action::ReplayChat { actions, .. } = action.action {
+									events.extend(actions.into_iter().filter_map(|act| ChatEvent::from_action(&act.action)));
 								}
 							}
-							Action::ReplayChat { actions, .. } => {
-								for action in actions {
-									if let Action::AddChatItem { .. } = action.action {
-										yielder.r#yield(action.action.to_owned()).await;
-									}
+
+							let Some(Continuation::Replay { continuation: next_token, .. }) = contents.live_chat_continuation.continuations.first() else {
+								for event in events.drain(..) {
+									yielder.r#yield(event).await;
 								}
-							}
-							action => {
-								yielder.r#yield(action.to_owned()).await;
-							}
+								break;
+							};
+
+							continuation_token.clear();
+							continuation_token.push_str(next_token);
 						}
-					}
-					sleep(timeout).await;
-					match chunk.cont().await {
-						Some(Ok(e)) => chunk = e,
-						_ => break
-					}
-				}
+						Ok(())
+					}))
+				})
 			}
-			Continuation::PlayerSeek { .. } => panic!("player seek should not be first continuation")
+			Continuation::Timed { .. } => unimplemented!("Continuation::Timed"),
+			Continuation::PlayerSeek { .. } => unreachable!("PlayerSeek shouldn't be the first continuation")
 		}
-		Ok(())
-	})))
+	}
+
+	pub fn initial_events(&mut self) -> impl Iterator<Item = ChatEvent> + '_ {
+		self.initial_events.drain(..)
+	}
+}
+
+impl<E: RequestExecutor> Stream for Chat<E> {
+	type Item = Result<ChatEvent, ChatError<E>>;
+
+	fn poll_next(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
+		self.project().stream.poll_next(cx)
+	}
+}
+
+#[derive(Debug)]
+pub enum ChatError<E: RequestExecutor> {
+	NoChat,
+	Deserialize(simd_json::Error),
+	Client(ClientError<E::Error>),
+	Receive(<E::Response as Response>::Error),
+	Signaler(SignalerError<E>),
+	Innertube(InnertubeError)
+}
+
+impl<E: RequestExecutor> From<simd_json::Error> for ChatError<E> {
+	fn from(e: simd_json::Error) -> Self {
+		Self::Deserialize(e)
+	}
+}
+impl<E: RequestExecutor> From<ClientError<E::Error>> for ChatError<E> {
+	fn from(e: ClientError<E::Error>) -> Self {
+		Self::Client(e)
+	}
+}
+impl<E: RequestExecutor> From<InnertubeError> for ChatError<E> {
+	fn from(e: InnertubeError) -> Self {
+		Self::Innertube(e)
+	}
+}
+impl<E: RequestExecutor> From<SignalerError<E>> for ChatError<E> {
+	fn from(e: SignalerError<E>) -> Self {
+		Self::Signaler(e)
+	}
+}
+
+impl<E: RequestExecutor> fmt::Display for ChatError<E> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::NoChat => f.write_str("stream has no chat"),
+			Self::Deserialize(e) => f.write_fmt(format_args!("failed to deserialize response: {e}")),
+			Self::Client(e) => fmt::Display::fmt(e, f),
+			Self::Receive(e) => f.write_fmt(format_args!("failed to receive response: {e}")),
+			Self::Signaler(e) => f.write_fmt(format_args!("real-time channel failed: {e}")),
+			Self::Innertube(e) => fmt::Display::fmt(e, f)
+		}
+	}
+}
+
+impl<E: RequestExecutor + fmt::Debug> StdError for ChatError<E>
+where
+	E::Response: fmt::Debug
+{
+	fn cause(&self) -> Option<&dyn StdError> {
+		match self {
+			Self::Deserialize(e) => Some(e),
+			Self::Client(e) => Some(e),
+			Self::Receive(e) => Some(e),
+			Self::Signaler(e) => Some(e),
+			Self::Innertube(e) => Some(e),
+			_ => None
+		}
+	}
 }
