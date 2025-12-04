@@ -86,7 +86,7 @@ impl fmt::Display for InnertubeError {
 impl StdError for InnertubeError {}
 
 pub trait RequestExecutor: Send + Sync + 'static {
-	type Response: Response;
+	type Response: Response + 'static;
 	type Error: StdError + Send;
 
 	fn make_request(&self, req: http::Request<Bytes>) -> impl Future<Output = Result<Self::Response, Self::Error>> + Send + Sync + '_;

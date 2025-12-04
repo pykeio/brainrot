@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{error::Error as StdError, fmt, io::BufRead, pin::Pin, task::Poll};
+use std::{error::Error as StdError, fmt, pin::Pin, task::Poll};
 
 use async_stream_lite::try_async_stream;
-use futures_util::{Stream, stream::BoxStream};
+use futures_util::{Stream, StreamExt, pin_mut, stream::BoxStream};
 use pin_project_lite::pin_project;
-use simd_json::base::{ValueAsArray, ValueAsScalar};
 
 mod client;
 mod context;
@@ -152,67 +151,40 @@ impl<E: RequestExecutor> Chat<E> {
 							let _ = continuation;
 							let _ = continuation_bytes;
 
-							let mut req = {
-								channel.reset();
-								channel.choose_server(&context.client).await?;
-								channel.init_session(&context.client).await?;
-								channel.get_session_stream(&context.client).await?
-							};
-							loop {
-								match req.recv_chunk().await {
-									Ok(Some(s)) => {
-										let Some(mut ofs_res_line) = s.lines().nth(1).transpose().expect("infallible") else {
-											break;
-										};
+							let signaler_stream = channel.stream(&context.client).await?;
+							pin_mut!(signaler_stream);
+							while let Some(()) = signaler_stream.next().await.transpose()? {
+								let mut continuation = context
+									.client
+									.chat_live(GetLiveChatRequest { continuation: &continuation_token })
+									.await?
+									.with_innertube_error()
+									.await?
+									.recv_all()
+									.await
+									.map_err(ChatError::Receive)?;
+								let continuation: GetLiveChatResponse<'_> = simd_json::from_slice(&mut continuation)?;
+								let Some(contents) = continuation.continuation_contents else {
+									break 'i;
+								};
 
-										if let Ok(s) = unsafe { simd_json::from_str::<simd_json::OwnedValue>(ofs_res_line.as_mut()) } {
-											if let Some(a) = s.as_array() {
-												// channel.aid = a[a.len() - 1].as_array().unwrap()[0].as_usize().unwrap();
-												if let Some(aid) = a.last().and_then(|x| x.as_array()).and_then(|x| x.first()).and_then(|x| x.as_usize()) {
-													channel.aid = aid;
-												}
-											}
-										}
-
-										let mut continuation = context
-											.client
-											.chat_live(GetLiveChatRequest { continuation: &continuation_token })
-											.await?
-											.with_innertube_error()
-											.await?
-											.recv_all()
-											.await
-											.map_err(ChatError::Receive)?;
-										let continuation: GetLiveChatResponse<'_> = simd_json::from_slice(&mut continuation)?;
-										let Some(contents) = continuation.continuation_contents else {
-											break 'i;
-										};
-
-										for event in contents
-											.live_chat_continuation
-											.actions
-											.unwrap_or_default()
-											.into_iter()
-											.filter_map(|act| ChatEvent::from_action(&act.action))
-										{
-											yielder.r#yield(event).await;
-										}
-
-										let Some(Continuation::Invalidation { continuation: next_token, .. }) =
-											contents.live_chat_continuation.continuations.first()
-										else {
-											break 'i;
-										};
-
-										continuation_token.clear();
-										continuation_token.push_str(next_token);
-									}
-									Ok(None) => break,
-									Err(e) => {
-										tracing::error!(source = ?e, "signaler stream errored");
-										break;
-									}
+								for event in contents
+									.live_chat_continuation
+									.actions
+									.unwrap_or_default()
+									.into_iter()
+									.filter_map(|act| ChatEvent::from_action(&act.action))
+								{
+									yielder.r#yield(event).await;
 								}
+
+								let Some(Continuation::Invalidation { continuation: next_token, .. }) = contents.live_chat_continuation.continuations.first()
+								else {
+									break 'i;
+								};
+
+								continuation_token.clear();
+								continuation_token.push_str(next_token);
 							}
 						}
 						Ok(())

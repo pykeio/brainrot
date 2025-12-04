@@ -14,7 +14,9 @@
 
 use std::{error::Error as StdError, fmt, io::BufRead, iter};
 
+use async_stream_lite::try_async_stream;
 use bytes::Bytes;
+use futures_util::Stream;
 use http::{HeaderName, HeaderValue, Method, Uri, header, uri::PathAndQuery};
 use simd_json::{
 	OwnedValue,
@@ -25,12 +27,12 @@ use super::client::{Client, ClientError, RequestExecutor, Response};
 
 #[derive(Debug, Default)]
 pub struct SignalerChannel {
-	pub(crate) topic: String,
+	topic: String,
 	tango_key: String,
 	gsessionid: Option<String>,
 	sid: Option<String>,
 	rid: usize,
-	pub(crate) aid: usize
+	aid: usize
 }
 
 impl SignalerChannel {
@@ -42,7 +44,7 @@ impl SignalerChannel {
 		}
 	}
 
-	pub fn reset(&mut self) {
+	fn reset(&mut self) {
 		self.gsessionid = None;
 		self.sid = None;
 		self.rid = 0;
@@ -56,7 +58,7 @@ impl SignalerChannel {
 			.collect()
 	}
 
-	pub async fn choose_server<E: RequestExecutor>(&mut self, client: &Client<E>) -> Result<(), SignalerError<E>> {
+	async fn choose_server<E: RequestExecutor>(&mut self, client: &Client<E>) -> Result<(), SignalerError<E>> {
 		let request = client
 			.base_request(
 				Uri::builder()
@@ -76,12 +78,21 @@ impl SignalerChannel {
 			.expect("invalid request");
 		let mut server_response = client.execute(request).await?.recv_all().await.map_err(SignalerError::Receive)?;
 		let server_response: simd_json::BorrowedValue<'_> = simd_json::from_slice(&mut server_response)?;
-		let gsess = server_response.as_array().unwrap()[0].as_str().unwrap();
-		self.gsessionid = Some(gsess.to_owned());
+
+		if let Some(res) = server_response.as_array()
+			&& let Some(gsess) = res.first().and_then(|x| x.as_str())
+		{
+			self.gsessionid = Some(gsess.to_owned());
+		} else {
+			return Err(SignalerError::Parse {
+				source: SignalerParseSource::ChooseServer
+			});
+		}
+
 		Ok(())
 	}
 
-	pub async fn init_session<E: RequestExecutor>(&mut self, client: &Client<E>) -> Result<(), SignalerError<E>> {
+	async fn init_session<E: RequestExecutor>(&mut self, client: &Client<E>) -> Result<(), SignalerError<E>> {
 		let ofs_parameters = format!(
 			// [[["1",[null,null,null,[8,5],null,[["youtube_live_chat_web"],[1],[[["{}"]]]],null,null,1],null,3]]]
 			"count=1&ofs=0&req0___data__=%5B%5B%5B%221%22%2C%5Bnull%2Cnull%2Cnull%2C%5B8%2C5%5D%2Cnull%2C%5B%5B%22youtube_live_chat_web%22%5D%2C%5B1%5D%2C%5B%5B%5B%22{}%22%5D%5D%5D%5D%2Cnull%2Cnull%2C1%5D%2Cnull%2C3%5D%5D%5D",
@@ -114,17 +125,39 @@ impl SignalerChannel {
 			.expect("invalid request");
 		let ofs = client.execute(request).await?.recv_all().await.map_err(SignalerError::Receive)?;
 
-		let mut ofs_res_line = ofs.lines().nth(1).unwrap().expect("shouldn't fail");
-		let value: OwnedValue = unsafe { simd_json::from_str(&mut ofs_res_line) }?;
-		let value = value.as_array().unwrap()[0].as_array().unwrap();
+		let parse_err = Err(SignalerError::Parse {
+			source: SignalerParseSource::SessionInit
+		});
+		let Some(Ok(mut res_line)) = ofs.lines().nth(1) else {
+			return Err(SignalerError::Parse {
+				source: SignalerParseSource::SessionInit
+			});
+		};
+		let value: OwnedValue = unsafe { simd_json::from_str(&mut res_line) }?;
+
+		let Some(data) = value.as_array().and_then(|x| x.first().and_then(|x| x.as_array())) else {
+			return parse_err;
+		};
+
 		// first value might be 1 if the request has an error, not entirely sure
-		assert_eq!(value[0].as_usize().unwrap(), 0);
-		let sid = value[1].as_array().unwrap()[1].as_str().unwrap();
+		if data.first().and_then(|x| x.as_usize()) != Some(0) {
+			return parse_err;
+		}
+
+		let Some(sid) = data.get(1).and_then(|x| x.as_array()).and_then(|x| x.get(1).and_then(|x| x.as_str())) else {
+			return parse_err;
+		};
 		self.sid = Some(sid.to_owned());
+
 		Ok(())
 	}
 
-	pub async fn get_session_stream<E: RequestExecutor>(&self, client: &Client<E>) -> Result<E::Response, SignalerError<E>> {
+	pub async fn stream<E: RequestExecutor>(&mut self, client: &Client<E>) -> Result<impl Stream<Item = Result<(), SignalerError<E>>> + '_, SignalerError<E>> {
+		// TODO: see if we can not need to reset state every time
+		self.reset();
+		self.choose_server(client).await?;
+		self.init_session(client).await?;
+
 		let request = client
 			.base_request(
 				Uri::builder()
@@ -149,14 +182,57 @@ impl SignalerChannel {
 			.header(header::CONNECTION, HeaderValue::from_static("keep-alive"))
 			.body(Bytes::new())
 			.expect("invalid request");
-		let res = client.execute(request).await?;
-		Ok(res)
+		let mut res = client.execute(request).await?;
+		Ok(try_async_stream(|yielder| async move {
+			loop {
+				match res.recv_chunk().await {
+					Ok(Some(chunk)) => {
+						let mut lines = chunk.lines();
+						let Some(Ok(event_id)) = lines.next() else {
+							break;
+						};
+
+						if event_id != "252" && event_id != "253" {
+							// 50, 51, and 53 are probably some internal stuff we don't care about. 252/253 seem to be correlated with new chat
+							// messages (though sometimes there aren't new chat messages at all and I'm not sure why).
+							// The channel starts off sending 252 but after a few seconds sends 253 instead. Not sure the difference between the
+							// two events, but they're both structured & function the same.
+							continue;
+						}
+
+						let Some(Ok(mut ofs_res_line)) = lines.next() else {
+							break;
+						};
+
+						if let Ok(s) = unsafe { simd_json::from_str::<simd_json::OwnedValue>(ofs_res_line.as_mut()) }
+							&& let Some(a) = s.as_array()
+							&& let Some(aid) = a.last().and_then(|x| x.as_array()).and_then(|x| x.first()).and_then(|x| x.as_usize())
+						{
+							self.aid = aid;
+						}
+
+						yielder.r#yield(()).await;
+					}
+					Ok(None) => break,
+					Err(e) => return Err(SignalerError::Receive(e))
+				}
+			}
+			Ok(())
+		}))
 	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignalerParseSource {
+	ChooseServer,
+	SessionInit,
+	SessionStream
 }
 
 #[derive(Debug)]
 pub enum SignalerError<E: RequestExecutor> {
 	NoChat,
+	Parse { source: SignalerParseSource },
 	Deserialize(simd_json::Error),
 	Client(ClientError<E::Error>),
 	Receive(<E::Response as Response>::Error)
@@ -178,6 +254,7 @@ impl<E: RequestExecutor> fmt::Display for SignalerError<E> {
 		match self {
 			Self::NoChat => f.write_str("stream has no chat"),
 			Self::Deserialize(e) => f.write_fmt(format_args!("failed to deserialize response: {e}")),
+			Self::Parse { source } => f.write_fmt(format_args!("couldn't parse response from {source:?}")),
 			Self::Client(e) => fmt::Display::fmt(e, f),
 			Self::Receive(e) => f.write_fmt(format_args!("failed to receive response: {e}"))
 		}
