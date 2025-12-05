@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{error::Error as StdError, fmt, pin::Pin, task::Poll};
+use std::{error::Error as StdError, fmt, pin::Pin, task::Poll, time::Duration};
 
 use async_stream_lite::try_async_stream;
 use futures_util::{Stream, StreamExt, pin_mut, stream::BoxStream};
 use pin_project_lite::pin_project;
+use tokio::time::sleep;
 
 mod client;
 mod context;
@@ -248,7 +249,67 @@ impl<E: RequestExecutor> Chat<E> {
 					}))
 				})
 			}
-			Continuation::Timed { .. } => unimplemented!("Continuation::Timed"),
+			Continuation::Timed { continuation, timeout_ms } => {
+				let continuation_token = continuation.to_string();
+				let timeout = Duration::from_millis(*timeout_ms as _);
+
+				let events: Vec<ChatEvent> = contents
+					.live_chat_continuation
+					.actions
+					.unwrap_or_default()
+					.into_iter()
+					.filter_map(|act| ChatEvent::from_action(&act.action))
+					.collect();
+
+				let _ = initial_continuation;
+				let _ = initial_continuation_bytes;
+
+				Ok(Self {
+					initial_events: events,
+					stream: Box::pin(try_async_stream(move |yielder| async move {
+						let mut continuation_token = continuation_token;
+						let mut timeout = timeout;
+						loop {
+							sleep(timeout).await;
+
+							let mut continuation = context
+								.client
+								.chat_live(GetLiveChatRequest { continuation: &continuation_token })
+								.await?
+								.with_innertube_error()
+								.await?
+								.recv_all()
+								.await
+								.map_err(ChatError::Receive)?;
+							let continuation: GetLiveChatResponse<'_> = simd_json::from_slice(&mut continuation)?;
+							let Some(contents) = continuation.continuation_contents else {
+								break;
+							};
+
+							for event in contents
+								.live_chat_continuation
+								.actions
+								.unwrap_or_default()
+								.into_iter()
+								.filter_map(|act| ChatEvent::from_action(&act.action))
+							{
+								yielder.r#yield(event).await;
+							}
+
+							let Some(Continuation::Timed { continuation: next_token, timeout_ms }) = contents.live_chat_continuation.continuations.first()
+							else {
+								break;
+							};
+
+							continuation_token.clear();
+							continuation_token.push_str(next_token);
+
+							timeout = Duration::from_millis(*timeout_ms as _);
+						}
+						Ok(())
+					}))
+				})
+			}
 			Continuation::PlayerSeek { .. } => unreachable!("PlayerSeek shouldn't be the first continuation")
 		}
 	}
