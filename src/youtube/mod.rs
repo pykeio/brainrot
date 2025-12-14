@@ -17,6 +17,7 @@ use std::{error::Error as StdError, fmt, pin::Pin, task::Poll, time::Duration};
 use async_stream_lite::try_async_stream;
 use futures_util::{Stream, StreamExt, pin_mut, stream::BoxStream};
 use pin_project_lite::pin_project;
+use simd_json::{BorrowedValue, derived::ValueTryAsObject};
 use tokio::time::sleep;
 
 mod client;
@@ -27,7 +28,7 @@ mod util;
 
 use self::{
 	client::ResponseExt,
-	signaler::SignalerChannel,
+	signaler::{SignalerChannel, SignalerError},
 	types::get_live_chat::{Continuation, GetLiveChatRequest, GetLiveChatResponse},
 	util::{TANGO_API_KEY, stringify_runs}
 };
@@ -40,7 +41,9 @@ pub use self::{
 	},
 	util::query_channel
 };
-use crate::youtube::signaler::SignalerError;
+
+#[derive(Debug)]
+pub struct Author {}
 
 #[derive(Debug)]
 pub enum ChatEvent {
@@ -48,10 +51,17 @@ pub enum ChatEvent {
 }
 
 impl ChatEvent {
-	pub(crate) fn from_action(action: &Action<'_>) -> Option<Self> {
+	pub(crate) fn from_action(action: BorrowedValue<'_>) -> Option<Self> {
+		let Ok(action) = simd_json::serde::from_refborrowed_value(&action) else {
+			let action_key = action.try_as_object().ok().and_then(|c| c.keys().next())?;
+			tracing::warn!("Encountered unknown or malformed action `{action_key}`");
+			tracing::trace!("bad action: {}", simd_json::to_string(&action).as_deref().unwrap_or("<STRINGIFY ERR>"));
+			return None;
+		};
+
 		match action {
 			Action::AddChatItem { item, .. } => match item {
-				ChatItem::TextMessage { message_renderer_base, message } => message.as_ref().map(|x| ChatEvent::Message { text: stringify_runs(&x.runs) }),
+				ChatItem::TextMessage { base, message } => message.as_ref().map(|x| ChatEvent::Message { text: stringify_runs(&x.runs) }),
 				_ => None
 			},
 			Action::ReplayChat { .. } => unreachable!("ReplayChat should be collapsed"),
@@ -105,9 +115,8 @@ impl<E: RequestExecutor> Chat<E> {
 				let initial_events = contents
 					.live_chat_continuation
 					.actions
-					.unwrap_or_default()
 					.into_iter()
-					.filter_map(|act| ChatEvent::from_action(&act.action))
+					.filter_map(|act| ChatEvent::from_action(act.action))
 					.collect();
 				let _ = initial_continuation;
 				let _ = initial_continuation_bytes;
@@ -134,9 +143,8 @@ impl<E: RequestExecutor> Chat<E> {
 							for event in contents
 								.live_chat_continuation
 								.actions
-								.unwrap_or_default()
 								.into_iter()
-								.filter_map(|act| ChatEvent::from_action(&act.action))
+								.filter_map(|act| ChatEvent::from_action(act.action))
 							{
 								yielder.r#yield(event).await;
 							}
@@ -172,9 +180,8 @@ impl<E: RequestExecutor> Chat<E> {
 								for event in contents
 									.live_chat_continuation
 									.actions
-									.unwrap_or_default()
 									.into_iter()
-									.filter_map(|act| ChatEvent::from_action(&act.action))
+									.filter_map(|act| ChatEvent::from_action(act.action))
 								{
 									yielder.r#yield(event).await;
 								}
@@ -197,9 +204,8 @@ impl<E: RequestExecutor> Chat<E> {
 				let events: Vec<ChatEvent> = contents
 					.live_chat_continuation
 					.actions
-					.unwrap_or_default()
 					.into_iter()
-					.filter_map(|act| ChatEvent::from_action(&act.action))
+					.filter_map(|act| ChatEvent::from_action(act.action))
 					.collect();
 
 				let _ = initial_continuation;
@@ -229,10 +235,12 @@ impl<E: RequestExecutor> Chat<E> {
 								break;
 							};
 
-							for action in contents.live_chat_continuation.actions.unwrap_or_default() {
-								if let Action::ReplayChat { actions, .. } = action.action {
-									events.extend(actions.into_iter().filter_map(|act| ChatEvent::from_action(&act.action)));
-								}
+							for action in contents.live_chat_continuation.actions {
+								let Ok(Action::ReplayChat { actions, .. }) = simd_json::serde::from_borrowed_value(action.action) else {
+									continue;
+								};
+
+								events.extend(actions.into_iter().filter_map(|act| ChatEvent::from_action(act.action)));
 							}
 
 							let Some(Continuation::Replay { continuation: next_token, .. }) = contents.live_chat_continuation.continuations.first() else {
@@ -256,9 +264,8 @@ impl<E: RequestExecutor> Chat<E> {
 				let events: Vec<ChatEvent> = contents
 					.live_chat_continuation
 					.actions
-					.unwrap_or_default()
 					.into_iter()
-					.filter_map(|act| ChatEvent::from_action(&act.action))
+					.filter_map(|act| ChatEvent::from_action(act.action))
 					.collect();
 
 				let _ = initial_continuation;
@@ -289,9 +296,8 @@ impl<E: RequestExecutor> Chat<E> {
 							for event in contents
 								.live_chat_continuation
 								.actions
-								.unwrap_or_default()
 								.into_iter()
-								.filter_map(|act| ChatEvent::from_action(&act.action))
+								.filter_map(|act| ChatEvent::from_action(act.action))
 							{
 								yielder.r#yield(event).await;
 							}

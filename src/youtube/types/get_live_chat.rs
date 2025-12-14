@@ -24,14 +24,14 @@ pub struct GetLiveChatRequest<'s> {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct GetLiveChatResponse<'s> {
-	#[serde(borrow)]
+	#[serde(bound = "GetLiveChatResponseContinuationContents<'s>: serde::Deserialize<'de>")]
 	pub continuation_contents: Option<GetLiveChatResponseContinuationContents<'s>>
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct GetLiveChatResponseContinuationContents<'s> {
-	#[serde(borrow)]
+	#[serde(bound = "LiveChatContinuation<'s>: serde::Deserialize<'de>")]
 	pub live_chat_continuation: LiveChatContinuation<'s>
 }
 
@@ -39,15 +39,19 @@ pub struct GetLiveChatResponseContinuationContents<'s> {
 pub struct LiveChatContinuation<'s> {
 	#[serde(borrow)]
 	pub continuations: Vec<Continuation<'s>>,
-	#[serde(borrow)]
-	pub actions: Option<Vec<ActionContainer<'s>>>
+	#[serde(default)]
+	#[serde(bound = "Vec<ActionContainer<'s>>: serde::Deserialize<'de>")]
+	pub actions: Vec<ActionContainer<'s>>
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionContainer<'s> {
-	#[serde(borrow, flatten)]
-	pub action: Action<'s>
+	#[serde(rename = "clickTrackingParams")]
+	_tracking: Option<&'s str>,
+	#[serde(flatten)]
+	#[serde(bound = "simd_json::BorrowedValue<'s>: serde::Deserialize<'de>")]
+	pub action: simd_json::BorrowedValue<'s>
 }
 
 #[derive(Deserialize, Debug)]
@@ -89,6 +93,13 @@ pub enum Action<'s> {
 		item: ChatItem<'s>,
 		client_id: Option<&'s str>
 	},
+	#[serde(rename = "addLiveChatTickerItemAction")]
+	#[serde(rename_all = "camelCase")]
+	AddTickerItem {
+		#[serde(flatten)]
+		#[serde(bound(deserialize = "simd_json::BorrowedValue<'s>: serde::Deserialize<'de>"))]
+		data: simd_json::BorrowedValue<'s>
+	},
 	#[serde(rename = "replaceChatItemAction")]
 	#[serde(rename_all = "camelCase")]
 	ReplaceChatItem {
@@ -114,10 +125,15 @@ pub enum Action<'s> {
 	#[serde(rename_all = "camelCase")]
 	AddBannerToLiveChat {
 		#[serde(flatten)]
-		data: simd_json::OwnedValue
+		#[serde(bound(deserialize = "simd_json::BorrowedValue<'s>: serde::Deserialize<'de>"))]
+		data: simd_json::BorrowedValue<'s>
 	},
 	#[serde(rename = "liveChatReportModerationStateCommand")]
-	ReportModerationState(simd_json::OwnedValue)
+	ReportModerationState {
+		#[serde(flatten)]
+		#[serde(bound(deserialize = "simd_json::BorrowedValue<'s>: serde::Deserialize<'de>"))]
+		data: simd_json::BorrowedValue<'s>
+	}
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -161,7 +177,7 @@ pub enum ChatItem<'s> {
 	#[serde(rename_all = "camelCase")]
 	TextMessage {
 		#[serde(borrow, flatten)]
-		message_renderer_base: MessageRendererBase<'s>,
+		base: MessageRendererBase<'s>,
 		#[serde(borrow)]
 		message: Option<LocalizedText<'s>>
 	},
@@ -169,7 +185,7 @@ pub enum ChatItem<'s> {
 	#[serde(rename_all = "camelCase")]
 	Superchat {
 		#[serde(borrow, flatten)]
-		message_renderer_base: MessageRendererBase<'s>,
+		base: MessageRendererBase<'s>,
 		#[serde(borrow)]
 		message: Option<LocalizedText<'s>>,
 		#[serde(borrow)]
@@ -184,7 +200,7 @@ pub enum ChatItem<'s> {
 	#[serde(rename_all = "camelCase")]
 	MembershipItem {
 		#[serde(borrow, flatten)]
-		message_renderer_base: MessageRendererBase<'s>,
+		base: MessageRendererBase<'s>,
 		#[serde(borrow)]
 		header_sub_text: Option<LocalizedText<'s>>,
 		#[serde(borrow)]
@@ -194,7 +210,7 @@ pub enum ChatItem<'s> {
 	#[serde(rename_all = "camelCase")]
 	PaidSticker {
 		#[serde(borrow, flatten)]
-		message_renderer_base: MessageRendererBase<'s>,
+		base: MessageRendererBase<'s>,
 		#[serde(borrow)]
 		purchase_amount_text: UnlocalizedText<'s>,
 		#[serde(borrow)]
@@ -209,42 +225,63 @@ pub enum ChatItem<'s> {
 	#[serde(rename = "liveChatSponsorshipsGiftPurchaseAnnouncementRenderer")]
 	#[serde(rename_all = "camelCase")]
 	MembershipGift {
-		id: String,
-		#[serde(flatten)]
-		data: simd_json::OwnedValue
+		id: &'s str,
+		#[serde(deserialize_with = "deserialize_number_from_string")]
+		timestamp_usec: i64,
+		author_external_channel_id: &'s str,
+		#[serde(borrow)]
+		header: ChatItemHeader<'s>
 	},
 	#[serde(rename = "liveChatSponsorshipsGiftRedemptionAnnouncementRenderer")]
 	#[serde(rename_all = "camelCase")]
 	MembershipGiftRedemption {
-		id: String,
-		#[serde(flatten)]
-		data: simd_json::OwnedValue
+		#[serde(borrow, flatten)]
+		base: MessageRendererBase<'s>,
+		#[serde(borrow)]
+		message: Option<LocalizedText<'s>>
 	},
 	#[serde(rename = "liveChatPlaceholderItemRenderer")]
 	#[serde(rename_all = "camelCase")]
 	Placeholder {
-		id: String,
+		id: &'s str,
 		#[serde(deserialize_with = "deserialize_number_from_string")]
 		timestamp_usec: i64
 	},
 	#[serde(rename = "liveChatViewerEngagementMessageRenderer")]
-	ViewerEngagement { id: String },
+	ViewerEngagement { id: &'s str },
 	#[serde(untagged)]
-	Unknown(simd_json::OwnedValue)
+	Unknown(#[serde(bound(deserialize = "simd_json::BorrowedValue<'s>: serde::Deserialize<'de>"))] simd_json::BorrowedValue<'s>)
 }
 
 impl ChatItem<'_> {
 	pub fn id(&self) -> &str {
 		match self {
-			ChatItem::MembershipItem { message_renderer_base, .. } => message_renderer_base.id,
-			ChatItem::PaidSticker { message_renderer_base, .. } => message_renderer_base.id,
-			ChatItem::Superchat { message_renderer_base, .. } => message_renderer_base.id,
-			ChatItem::TextMessage { message_renderer_base, .. } => message_renderer_base.id,
+			ChatItem::MembershipItem { base, .. } => base.id,
+			ChatItem::PaidSticker { base, .. } => base.id,
+			ChatItem::Superchat { base, .. } => base.id,
+			ChatItem::TextMessage { base, .. } => base.id,
 			ChatItem::MembershipGift { id, .. } => id,
-			ChatItem::MembershipGiftRedemption { id, .. } => id,
+			ChatItem::MembershipGiftRedemption { base, .. } => base.id,
 			ChatItem::Placeholder { id, .. } => id,
 			ChatItem::ViewerEngagement { id } => id,
 			ChatItem::Unknown(_) => ""
 		}
+	}
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatItemHeader<'s> {
+	#[serde(rename = "liveChatSponsorshipsHeaderRenderer")]
+	#[serde(rename_all = "camelCase")]
+	Sponsorship {
+		#[serde(borrow)]
+		author_name: Option<UnlocalizedText<'s>>,
+		#[serde(borrow)]
+		author_photo: ImageContainer<'s>,
+		#[serde(borrow)]
+		author_badges: Option<Vec<AuthorBadge<'s>>>,
+		#[serde(borrow)]
+		primary_text: LocalizedText<'s>
 	}
 }
