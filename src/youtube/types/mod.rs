@@ -51,31 +51,9 @@ pub struct InnertubeRequestContextClient<'c> {
 }
 
 #[derive(Deserialize, Debug)]
-#[serde(untagged, rename_all = "camelCase")]
-pub enum InnertubeResponse<'s, T> {
-	Error {
-		#[serde(borrow)]
-		error: InnertubeError<'s>
-	},
-	Success {
-		#[serde(flatten)]
-		data: T
-	}
-}
-
-#[derive(Deserialize, Debug)]
 pub struct InnertubeError<'s> {
-	pub code: u16,
 	pub message: &'s str,
-	pub errors: Vec<InnertubeErrorDetail<'s>>,
 	pub status: &'s str
-}
-
-#[derive(Deserialize, Debug)]
-pub struct InnertubeErrorDetail<'s> {
-	pub message: &'s str,
-	pub domain: &'s str,
-	pub reason: &'s str
 }
 
 #[derive(Deserialize, Default, Debug, Clone)]
@@ -112,11 +90,7 @@ impl fmt::Display for LocalizedRun<'_> {
 					.expect("emojis should always have accessibility data")
 					.accessibility_data
 					.label;
-				if let Some(true) = emoji.is_custom_emoji {
-					f.write_fmt(format_args!(":{label}:"))
-				} else {
-					f.write_str(label)
-				}
+				if emoji.is_custom_emoji { f.write_fmt(format_args!(":{label}:")) } else { f.write_str(label) }
 			}
 		}
 	}
@@ -163,9 +137,11 @@ pub struct Emoji<'s> {
 	pub shortcuts: Option<Vec<&'s str>>,
 	#[serde(borrow)]
 	pub search_terms: Option<Vec<&'s str>>,
-	pub supports_skin_tone: Option<bool>,
+	#[serde(default)]
+	pub supports_skin_tone: bool,
 	pub image: ImageContainer<'s>,
-	pub is_custom_emoji: Option<bool>
+	#[serde(default)]
+	pub is_custom_emoji: bool
 }
 
 #[derive(Deserialize, Debug, Clone)]

@@ -29,8 +29,8 @@ mod util;
 use self::{
 	client::ResponseExt,
 	signaler::{SignalerChannel, SignalerError},
-	types::get_live_chat::{Continuation, GetLiveChatRequest, GetLiveChatResponse},
-	util::{TANGO_API_KEY, stringify_runs}
+	types::get_live_chat::{ChatItemHeader, Continuation, GetLiveChatRequest, GetLiveChatResponse},
+	util::TANGO_API_KEY
 };
 pub use self::{
 	client::{Client, ClientError, InnertubeError, RequestExecutor, Response},
@@ -39,15 +39,169 @@ pub use self::{
 		ImageContainer, LocalizedRun, LocalizedText, Thumbnail, UnlocalizedText,
 		get_live_chat::{Action, ChatItem, MessageRendererBase}
 	},
-	util::query_channel
+	util::{ChannelStream, QueryChannelError, StreamStatus, query_channel}
 };
 
-#[derive(Debug)]
-pub struct Author {}
+#[derive(Debug, Clone)]
+pub struct Image {
+	pub url: String,
+	pub size: Option<(u32, u32)>
+}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct AuthorBadge {
+	pub name: String,
+	pub icon: Vec<Image>,
+	pub icon_type: Option<String>
+}
+
+#[derive(Debug, Clone)]
+pub struct Author {
+	pub id: String,
+	pub name: Option<String>,
+	pub avatars: Vec<Image>,
+	pub badges: Vec<AuthorBadge>
+}
+
+impl Author {
+	pub(crate) fn from_message_base(base: &types::get_live_chat::MessageRendererBase) -> Self {
+		Author {
+			id: base.author_external_channel_id.to_string(),
+			name: base.author_name.as_ref().map(|text| text.simple_text.to_string()),
+			avatars: base
+				.author_photo
+				.thumbnails
+				.iter()
+				.map(|thumb| Image {
+					url: thumb.url.to_string(),
+					size: match (thumb.width, thumb.height) {
+						(Some(width), Some(height)) => Some((width as u32, height as u32)),
+						_ => None
+					}
+				})
+				.collect(),
+			badges: base
+				.author_badges
+				.iter()
+				.map(|badge| AuthorBadge {
+					name: badge.live_chat_author_badge_renderer.tooltip.to_string(),
+					icon_type: badge.live_chat_author_badge_renderer.icon.as_ref().map(|icon| icon.icon_type.to_string()),
+					icon: badge
+						.live_chat_author_badge_renderer
+						.custom_thumbnail
+						.as_ref()
+						.map(|img| {
+							img.thumbnails
+								.iter()
+								.map(|thumb| Image {
+									url: thumb.url.to_string(),
+									size: match (thumb.width, thumb.height) {
+										(Some(width), Some(height)) => Some((width as u32, height as u32)),
+										_ => None
+									}
+								})
+								.collect()
+						})
+						.unwrap_or_default()
+				})
+				.collect()
+		}
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct SuperchatMeta {
+	pub amount: String,
+	pub header_background_color: u32,
+	pub header_text_color: u32,
+	pub body_background_color: u32,
+	pub body_text_color: u32,
+	pub author_name_text_color: u32
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MembershipRedemption {
+	/// Membership was purchased by user
+	Purchase,
+	/// Membership was redeemed from a gift
+	Gift
+}
+
+#[derive(Debug, Clone)]
+pub enum Run {
+	Text(String),
+	Emoji { name: String, id: String, images: Vec<Image> }
+}
+
+impl Run {
+	pub(crate) fn from_localized_run(run: &LocalizedRun) -> Self {
+		match run {
+			LocalizedRun::Text { text } => Run::Text(text.to_string()),
+			LocalizedRun::Emoji { emoji, .. } => {
+				let label = emoji
+					.image
+					.accessibility
+					.as_ref()
+					.expect("emojis should always have accessibility data")
+					.accessibility_data
+					.label
+					.to_string();
+				if emoji.is_custom_emoji {
+					Run::Emoji {
+						name: label,
+						id: emoji.emoji_id.to_string(),
+						images: emoji
+							.image
+							.thumbnails
+							.iter()
+							.map(|thumb| Image {
+								url: thumb.url.to_string(),
+								size: match (thumb.width, thumb.height) {
+									(Some(width), Some(height)) => Some((width as u32, height as u32)),
+									_ => None
+								}
+							})
+							.collect()
+					}
+				} else {
+					Run::Text(label)
+				}
+			}
+		}
+	}
+}
+
+impl fmt::Display for Run {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Run::Text(text) => f.write_str(text),
+			Run::Emoji { name, .. } => f.write_fmt(format_args!(":{name}:"))
+		}
+	}
+}
+
+#[derive(Debug, Clone)]
 pub enum ChatEvent {
-	Message { text: String }
+	Message {
+		id: String,
+		author: Author,
+		contents: Vec<Run>,
+		timestamp_ms: i64,
+		superchat: Option<SuperchatMeta>
+	},
+	Membership {
+		id: String,
+		user: Author,
+		contents: Vec<Run>,
+		timestamp_ms: i64,
+		redemption_type: MembershipRedemption
+	},
+	MembershipGift {
+		id: String,
+		gifter: Author,
+		contents: Vec<Run>,
+		timestamp_ms: i64
+	}
 }
 
 impl ChatEvent {
@@ -61,7 +215,87 @@ impl ChatEvent {
 
 		match action {
 			Action::AddChatItem { item, .. } => match item {
-				ChatItem::TextMessage { base, message } => message.as_ref().map(|x| ChatEvent::Message { text: stringify_runs(&x.runs) }),
+				ChatItem::TextMessage { base, message } => Some(ChatEvent::Message {
+					id: base.id.to_string(),
+					author: Author::from_message_base(&base),
+					contents: message
+						.as_ref()
+						.map(|text| text.runs.iter().map(Run::from_localized_run).collect())
+						.unwrap_or_default(),
+					timestamp_ms: base.timestamp_usec / 1000,
+					superchat: None
+				}),
+				ChatItem::Superchat {
+					base,
+					message,
+					purchase_amount_text,
+					header_background_color,
+					header_text_color,
+					body_background_color,
+					body_text_color,
+					author_name_text_color
+				} => Some(ChatEvent::Message {
+					id: base.id.to_string(),
+					author: Author::from_message_base(&base),
+					contents: message
+						.as_ref()
+						.map(|text| text.runs.iter().map(Run::from_localized_run).collect())
+						.unwrap_or_default(),
+					timestamp_ms: base.timestamp_usec / 1000,
+					superchat: Some(SuperchatMeta {
+						amount: purchase_amount_text.simple_text.to_string(),
+						header_background_color: header_background_color as _,
+						author_name_text_color: author_name_text_color as _,
+						body_background_color: body_background_color as _,
+						body_text_color: body_text_color as _,
+						header_text_color: header_text_color as _
+					})
+				}),
+				ChatItem::MembershipItem { base, header_sub_text } => Some(ChatEvent::Membership {
+					id: base.id.to_string(),
+					user: Author::from_message_base(&base),
+					contents: header_sub_text
+						.as_ref()
+						.map(|text| text.runs.iter().map(Run::from_localized_run).collect())
+						.unwrap_or_default(),
+					timestamp_ms: base.timestamp_usec / 1000,
+					redemption_type: MembershipRedemption::Purchase
+				}),
+				ChatItem::MembershipGiftRedemption { base, message } => Some(ChatEvent::Membership {
+					id: base.id.to_string(),
+					user: Author::from_message_base(&base),
+					contents: message
+						.as_ref()
+						.map(|text| text.runs.iter().map(Run::from_localized_run).collect())
+						.unwrap_or_default(),
+					timestamp_ms: base.timestamp_usec / 1000,
+					redemption_type: MembershipRedemption::Gift
+				}),
+				ChatItem::MembershipGift {
+					id,
+					timestamp_usec,
+					author_external_channel_id,
+					header
+				} => match header {
+					ChatItemHeader::Sponsorship {
+						author_name,
+						author_photo,
+						author_badges,
+						primary_text
+					} => Some(ChatEvent::MembershipGift {
+						id: id.to_string(),
+						gifter: Author::from_message_base(&MessageRendererBase {
+							id: author_external_channel_id,
+							author_name,
+							author_photo,
+							author_badges,
+							timestamp_usec,
+							author_external_channel_id
+						}),
+						contents: primary_text.runs.iter().map(Run::from_localized_run).collect(),
+						timestamp_ms: timestamp_usec / 1000
+					})
+				},
 				_ => None
 			},
 			Action::ReplayChat { .. } => unreachable!("ReplayChat should be collapsed"),

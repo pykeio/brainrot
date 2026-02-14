@@ -163,8 +163,8 @@ pub struct MessageRendererBase<'s> {
 	pub author_name: Option<UnlocalizedText<'s>>,
 	#[serde(borrow)]
 	pub author_photo: ImageContainer<'s>,
-	#[serde(borrow)]
-	pub author_badges: Option<Vec<AuthorBadge<'s>>>,
+	#[serde(borrow, default)]
+	pub author_badges: Vec<AuthorBadge<'s>>,
 	#[serde(deserialize_with = "deserialize_number_from_string")]
 	pub timestamp_usec: i64,
 	pub author_external_channel_id: &'s str
@@ -202,9 +202,7 @@ pub enum ChatItem<'s> {
 		#[serde(borrow, flatten)]
 		base: MessageRendererBase<'s>,
 		#[serde(borrow)]
-		header_sub_text: Option<LocalizedText<'s>>,
-		#[serde(borrow)]
-		author_badges: Option<Vec<AuthorBadge<'s>>>
+		header_sub_text: Option<LocalizedText<'s>>
 	},
 	#[serde(rename = "liveChatPaidStickerRenderer")]
 	#[serde(rename_all = "camelCase")]
@@ -279,8 +277,8 @@ pub enum ChatItemHeader<'s> {
 		author_name: Option<UnlocalizedText<'s>>,
 		#[serde(borrow)]
 		author_photo: ImageContainer<'s>,
-		#[serde(borrow)]
-		author_badges: Option<Vec<AuthorBadge<'s>>>,
+		#[serde(borrow, default)]
+		author_badges: Vec<AuthorBadge<'s>>,
 		#[serde(borrow)]
 		primary_text: LocalizedText<'s>
 	}
