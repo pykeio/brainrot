@@ -12,17 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![warn(clippy::unwrap_used)]
+
 #[cfg(feature = "twitch")]
 pub mod twitch;
-#[cfg(feature = "twitch")]
-pub use self::twitch::{Chat as TwitchChat, ChatEvent as TwitchChatEvent, MessageSegment as TwitchMessageSegment, TwitchIdentity};
-
 #[cfg(feature = "youtube")]
 pub mod youtube;
-
-#[cfg(all(feature = "twitch", feature = "youtube"))]
-mod multicast;
-#[cfg(all(feature = "twitch", feature = "youtube"))]
-pub use self::multicast::{Multicast, MulticastError, VariantChat};
 
 pub(crate) mod util;

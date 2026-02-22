@@ -14,15 +14,15 @@
 
 use std::env::args;
 
-use brainrot::{TwitchChat, TwitchChatEvent, twitch};
+use brainrot::twitch::{Anonymous, Chat, ChatEvent};
 use futures_util::StreamExt;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-	let mut client = TwitchChat::new(args().nth(1).as_deref().unwrap_or("miyukiwei"), twitch::Anonymous).await?;
+	let mut client = Chat::new(args().nth(1).as_deref().unwrap_or("miyukiwei"), Anonymous).await?;
 
 	while let Some(message) = client.next().await.transpose()? {
-		if let TwitchChatEvent::Message { user, contents, .. } = message {
+		if let ChatEvent::Message { user, contents, .. } = message {
 			println!("{}: {}", user.display_name, contents.iter().map(|c| c.to_string()).collect::<String>());
 		}
 	}

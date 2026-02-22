@@ -12,110 +12,150 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::{Deserialize, Deserializer, de::Error};
-use serde_aux::field_attributes::deserialize_number_from_string;
-use simd_json::OwnedValue;
+use std::{fmt, str::FromStr};
 
+use serde::{Deserialize, Deserializer, Serialize};
+
+use crate::youtube::client::{Client, RequestExecutor};
+
+pub mod browse;
 pub mod get_live_chat;
-pub mod streams_page;
+pub mod video;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug)]
+pub struct InnertubeRequest<'s, T: Serialize + 's> {
+	context: InnertubeRequestContext<'s>,
+	#[serde(flatten)]
+	body: T
+}
+
+impl<'s, T: Serialize + 's> InnertubeRequest<'s, T> {
+	pub(crate) fn new<'r: 's, E: RequestExecutor>(client: &'r Client<E>, body: T) -> Self {
+		Self {
+			context: client.request_context(),
+			body
+		}
+	}
+}
+
+#[derive(Serialize, Debug)]
+pub struct InnertubeRequestContext<'s> {
+	pub client: InnertubeRequestContextClient<'s>
+}
+
+#[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct CommandMetadata {
-	pub web_command_metadata: OwnedValue
+pub struct InnertubeRequestContextClient<'c> {
+	pub client_version: &'c str,
+	pub client_name: &'c str
+}
+
+#[derive(Deserialize, Debug)]
+pub struct InnertubeError<'s> {
+	pub message: &'s str,
+	pub status: &'s str
 }
 
 #[derive(Deserialize, Default, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct UnlocalizedText {
-	pub simple_text: String,
-	pub accessibility: Option<Accessibility>
+pub struct UnlocalizedText<'s> {
+	pub simple_text: &'s str,
+	#[serde(borrow)]
+	pub accessibility: Option<Accessibility<'s>>
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
-pub enum LocalizedRun {
+pub enum LocalizedRun<'s> {
 	Text {
-		text: String
+		text: &'s str
 	},
 	#[serde(rename_all = "camelCase")]
 	Emoji {
-		emoji: Emoji,
-		variant_ids: Option<Vec<String>>
+		emoji: Emoji<'s>,
+		#[serde(borrow)]
+		variant_ids: Option<Vec<&'s str>>
 	}
 }
 
-impl LocalizedRun {
-	pub fn to_chat_string(&self) -> String {
+impl fmt::Display for LocalizedRun<'_> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			Self::Text { text } => text.to_owned(),
+			Self::Text { text } => f.write_str(text),
 			Self::Emoji { emoji, .. } => {
-				if let Some(true) = emoji.is_custom_emoji {
-					format!(":{}:", emoji.image.accessibility.as_ref().unwrap().accessibility_data.label)
-				} else {
-					emoji.image.accessibility.as_ref().unwrap().accessibility_data.label.to_owned()
-				}
+				let label = emoji
+					.image
+					.accessibility
+					.as_ref()
+					.expect("emojis should always have accessibility data")
+					.accessibility_data
+					.label;
+				if emoji.is_custom_emoji { f.write_fmt(format_args!(":{label}:")) } else { f.write_str(label) }
 			}
 		}
 	}
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct LocalizedText {
-	pub runs: Vec<LocalizedRun>
+pub struct LocalizedText<'s> {
+	#[serde(borrow)]
+	pub runs: Vec<LocalizedRun<'s>>
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct ImageContainer {
-	pub thumbnails: Vec<Thumbnail>,
-	pub accessibility: Option<Accessibility>
+pub struct ImageContainer<'s> {
+	#[serde(borrow)]
+	pub thumbnails: Vec<Thumbnail<'s>>,
+	#[serde(borrow)]
+	pub accessibility: Option<Accessibility<'s>>
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct Accessibility {
-	pub accessibility_data: AccessibilityData
+pub struct Accessibility<'s> {
+	#[serde(borrow)]
+	pub accessibility_data: AccessibilityData<'s>
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct AccessibilityData {
-	pub label: String
+pub struct AccessibilityData<'s> {
+	pub label: &'s str
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct Thumbnail {
-	pub url: String,
+pub struct Thumbnail<'s> {
+	pub url: &'s str,
 	pub width: Option<usize>,
 	pub height: Option<usize>
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct Emoji {
-	pub emoji_id: String,
-	pub shortcuts: Option<Vec<String>>,
-	pub search_terms: Option<Vec<String>>,
-	pub supports_skin_tone: Option<bool>,
-	pub image: ImageContainer,
-	pub is_custom_emoji: Option<bool>
+pub struct Emoji<'s> {
+	pub emoji_id: &'s str,
+	#[serde(borrow)]
+	pub shortcuts: Option<Vec<&'s str>>,
+	#[serde(borrow)]
+	pub search_terms: Option<Vec<&'s str>>,
+	#[serde(default)]
+	pub supports_skin_tone: bool,
+	pub image: ImageContainer<'s>,
+	#[serde(default)]
+	pub is_custom_emoji: bool
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct Icon {
-	pub icon_type: String
+pub struct Icon<'s> {
+	pub icon_type: &'s str
 }
 
-pub fn deserialize_datetime_utc_from_microseconds<'de, D>(deserializer: D) -> Result<chrono::DateTime<chrono::Utc>, D::Error>
+pub fn deserialize_number_from_string<'de, T, D>(deserializer: D) -> Result<T, D::Error>
 where
-	D: Deserializer<'de>
+	D: Deserializer<'de>,
+	T: FromStr,
+	<T as FromStr>::Err: std::error::Error
 {
-	use chrono::prelude::*;
-
-	let number = deserialize_number_from_string::<i64, D>(deserializer)?;
-	let seconds = number / 1_000_000;
-	let micros = (number % 1_000_000) as u32;
-	let nanos = micros * 1_000;
-
-	DateTime::from_timestamp(seconds, nanos).ok_or_else(|| D::Error::custom("Couldn't parse the timestamp"))
+	let t: &str = Deserialize::deserialize(deserializer)?;
+	t.parse().map_err(serde::de::Error::custom)
 }

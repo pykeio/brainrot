@@ -1,4 +1,6 @@
 {
 	"rust-analyzer.check.features": ["tls-native", "serde"],
-	"rust-analyzer.cargo.features": ["tls-native", "serde"]
+	"rust-analyzer.cargo.features": ["tls-native", "serde"],
+	"rust-analyzer.check.command": "clippy",
+	"rust-analyzer.diagnostics.experimental.enable": true,
 }
