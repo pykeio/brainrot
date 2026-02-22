@@ -62,7 +62,6 @@ pub enum Continuation<'s> {
 	Invalidation {
 		#[serde(borrow)]
 		invalidation_id: InvalidationId<'s>,
-		// timeout_ms: usize,
 		continuation: &'s str
 	},
 	#[serde(rename = "timedContinuationData")]

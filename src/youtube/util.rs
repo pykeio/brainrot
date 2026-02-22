@@ -127,7 +127,6 @@ pub async fn query_channel<E: RequestExecutor>(channel_id: &str, client: &Client
 
 					let video_id = video_id.to_string();
 					let title = stringify_runs(&title.runs);
-					// let thumbnail = thumbnail.thumbnails.last().map(|c| c.url);
 					let thumbnail = format!("https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"); // 1280x720, innertube only gives us 336x118 at most
 
 					match time_status {

@@ -121,7 +121,7 @@ pub(crate) fn to_chat_event(message: irc::proto::Message) -> Option<ChatEvent> {
 				.tags?
 				.into_iter()
 				.filter(|c| c.1.is_some())
-				.map(|c| (c.0, c.1.unwrap()))
+				.map(|c| (c.0, c.1.expect("infallible")))
 				.collect::<HashMap<_, _>>();
 
 			let (username, user_display_name) = match message.prefix? {
@@ -180,7 +180,7 @@ pub(crate) fn to_chat_event(message: irc::proto::Message) -> Option<ChatEvent> {
 					emotes.push((id.to_owned(), from, to));
 				}
 			}
-			emotes.sort_by(|a, b| a.1.cmp(&b.1));
+			emotes.sort_by_key(|a| a.1);
 
 			let mut segments = Vec::with_capacity(emotes.len());
 			if !emotes.is_empty() {

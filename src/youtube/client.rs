@@ -188,8 +188,6 @@ impl<E: RequestExecutor> Client<E> {
 		);
 		headers.append(HeaderName::from_static("x-youtube-client-version"), HeaderValue::from_str(context.client_version).expect("Invalid client version"));
 
-		// Set our Accept-Language to en-US so we can properly match substrings
-		headers.append(header::ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.5"));
 		headers.append(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0"));
 		// Referer is required by Signaler endpoints.
 		headers.append(header::REFERER, HeaderValue::from_static("https://www.youtube.com/"));

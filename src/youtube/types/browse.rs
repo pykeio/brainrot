@@ -84,8 +84,6 @@ pub enum RichItemContent<'s> {
 	VideoRenderer {
 		#[serde(borrow)]
 		title: LocalizedText<'s>,
-		// #[serde(borrow)]
-		// thumbnail: ImageContainer<'s>,
 		#[serde(borrow)]
 		thumbnail_overlays: Vec<ThumbnailOverlay<'s>>,
 		video_id: &'s str,
