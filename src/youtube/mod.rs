@@ -18,7 +18,6 @@ use async_stream_lite::try_async_stream;
 use futures_util::{Stream, StreamExt, pin_mut, stream::BoxStream};
 use pin_project_lite::pin_project;
 use simd_json::{BorrowedValue, derived::ValueTryAsObject};
-use tokio::time::sleep;
 
 mod client;
 mod context;
@@ -511,7 +510,7 @@ impl<E: RequestExecutor> Chat<E> {
 						let mut continuation_token = continuation_token;
 						let mut timeout = timeout;
 						loop {
-							sleep(timeout).await;
+							E::sleep(timeout).await;
 
 							let mut continuation = context
 								.client

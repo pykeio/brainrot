@@ -27,6 +27,10 @@ impl RequestExecutor for ReqwestExecutor {
 	async fn make_request(&self, req: http::Request<bytes::Bytes>) -> Result<Self::Response, Self::Error> {
 		self.0.execute(req.try_into().unwrap()).await.map(ReqwestResponse)
 	}
+
+	async fn sleep(dur: std::time::Duration) {
+		tokio::time::sleep(dur).await
+	}
 }
 
 #[derive(Debug)]

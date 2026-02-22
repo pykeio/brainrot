@@ -12,7 +12,6 @@ rust-version = "1.89"
 [dependencies]
 tracing = { version = "0.1", default-features = false, features = [ "std" ] }
 irc = { version = "1.0", optional = true, default-features = false }
-tokio = { version = "1.42", default-features = false, features = [ "net" ] }
 futures-util = { version = "0.3", default-features = false, features = [ "std" ] }
 thiserror = "2.0"
 serde = { version = "1.0", optional = true, features = [ "derive" ] }

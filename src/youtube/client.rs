@@ -1,4 +1,4 @@
-use std::{error::Error as StdError, fmt, future::Future, sync::OnceLock};
+use std::{error::Error as StdError, fmt, future::Future, sync::OnceLock, time::Duration};
 
 use bytes::{Bytes, BytesMut};
 use http::{HeaderMap, HeaderName, HeaderValue, Method, Request, Uri, header, request::Builder as RequestBuilder, uri::PathAndQuery};
@@ -90,6 +90,8 @@ pub trait RequestExecutor: Send + Sync + 'static {
 	type Error: StdError + Send;
 
 	fn make_request(&self, req: http::Request<Bytes>) -> impl Future<Output = Result<Self::Response, Self::Error>> + Send + Sync + '_;
+
+	fn sleep(dur: Duration) -> impl Future<Output = ()> + Send + Sync;
 }
 
 #[derive(Debug)]
