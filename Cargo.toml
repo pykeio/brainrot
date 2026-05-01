@@ -8,6 +8,7 @@ authors = [ "Carson M. <carson@pyke.io>" ]
 repository = "https://github.com/pykeio/brainrot"
 edition = "2024"
 rust-version = "1.89"
+exclude = [ "examples/" ]
 
 [dependencies]
 tracing = { version = "0.1", default-features = false, features = [ "std" ] }
