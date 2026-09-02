@@ -9,7 +9,7 @@ use crate::youtube::types::{
 };
 
 pub(crate) const DEFAULT_CLIENT_NAME: &str = "WEB";
-pub(crate) const DEFAULT_CLIENT_VERSION: &str = "2.20250925.01.00";
+pub(crate) const DEFAULT_CLIENT_VERSION: &str = "2.20260901.00.00";
 
 pub trait Response: Send + Sized {
 	type Error: StdError + Send;
@@ -188,7 +188,7 @@ impl<E: RequestExecutor> Client<E> {
 		);
 		headers.append(HeaderName::from_static("x-youtube-client-version"), HeaderValue::from_str(context.client_version).expect("Invalid client version"));
 
-		headers.append(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0"));
+		headers.append(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0"));
 		// Referer is required by Signaler endpoints.
 		headers.append(header::REFERER, HeaderValue::from_static("https://www.youtube.com/"));
 
