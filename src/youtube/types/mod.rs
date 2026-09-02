@@ -59,6 +59,7 @@ pub struct InnertubeError<'s> {
 #[derive(Deserialize, Default, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct UnlocalizedText<'s> {
+	#[serde(alias = "content")]
 	pub simple_text: &'s str,
 	#[serde(borrow)]
 	pub accessibility: Option<Accessibility<'s>>

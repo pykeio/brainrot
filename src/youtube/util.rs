@@ -21,8 +21,8 @@ use super::client::{Client, ClientError, InnertubeError, RequestExecutor, Respon
 use crate::youtube::{
 	LocalizedRun,
 	types::browse::{
-		BrowseRequest, BrowseResponse, BrowseResponseContents, FeedContentsRenderer, RichGridItem, RichItemContent, TabItemRenderer, ThumbnailOverlay,
-		VideoTimeStatus
+		BrowseRequest, BrowseResponse, BrowseResponseContents, FeedContentsRenderer, LockupContentImage, LockupMetadataViewModel, RichGridItem,
+		RichItemContent, TabItemRenderer, ThumbnailOverlay, ThumbnailOverlayBadge, ThumbnailOverlayBadgeStyle, ThumbnailOverlayView, VideoTimeStatus
 	}
 };
 
@@ -31,7 +31,7 @@ pub(crate) const TANGO_API_KEY: &str = "AIzaSyDZNkyC-AtROwMBpLfevIvqYk-Gfi8ZOeo"
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamStatus {
 	Live,
-	Upcoming { scheduled_secs: u64 }
+	Upcoming { scheduled_secs: Option<u64> }
 }
 
 #[derive(Debug)]
@@ -141,10 +141,60 @@ pub async fn query_channel<E: RequestExecutor>(channel_id: &str, client: &Client
 							title,
 							thumbnail_url: Some(thumbnail),
 							status: StreamStatus::Upcoming {
-								scheduled_secs: upcoming_event_data
-									.as_ref()
-									.expect("`upcomingEventData` should be present for UPCOMING streams")
-									.start_time_secs
+								scheduled_secs: Some(
+									upcoming_event_data
+										.as_ref()
+										.expect("`upcomingEventData` should be present for UPCOMING streams")
+										.start_time_secs
+								)
+							}
+						}),
+						_ => unreachable!()
+					}
+				}
+				RichItemContent::LockupViewModel {
+					content_id, metadata, content_image, ..
+				} => {
+					let LockupContentImage::ThumbnailViewModel { overlays } = content_image;
+
+					let time_status = overlays.iter().find_map(|c| match c {
+						#[allow(clippy::unnecessary_find_map)]
+						ThumbnailOverlayView::ThumbnailBottomOverlayViewModel { badges } => badges.iter().find_map(|b| match b {
+							ThumbnailOverlayBadge::ThumbnailBadgeViewModel { text, badge_style } => match badge_style {
+								ThumbnailOverlayBadgeStyle::Live => Some(VideoTimeStatus::Live),
+								ThumbnailOverlayBadgeStyle::Default => Some(
+									// unfortunately this is the only way i can see to identify upcoming streams with lockupViewModel :/
+									if *text == "Upcoming" { VideoTimeStatus::Upcoming } else { VideoTimeStatus::Default }
+								)
+							}
+						}),
+						_ => None
+					})?;
+
+					if matches!(time_status, VideoTimeStatus::Default) {
+						return None;
+					}
+
+					let LockupMetadataViewModel::LockupMetadataViewModel { title } = metadata;
+
+					let video_id = content_id.to_string();
+					let title = title.simple_text.to_string();
+					let thumbnail = format!("https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"); // 1280x720, innertube only gives us 336x118 at most
+
+					match time_status {
+						VideoTimeStatus::Live => Some(ChannelStream {
+							video_id,
+							title,
+							thumbnail_url: Some(thumbnail),
+							status: StreamStatus::Live
+						}),
+						VideoTimeStatus::Upcoming => Some(ChannelStream {
+							video_id,
+							title,
+							thumbnail_url: Some(thumbnail),
+							status: StreamStatus::Upcoming {
+								// lockupViewModel only gives display string, and we're not about to try to parse that
+								scheduled_secs: None
 							}
 						}),
 						_ => unreachable!()

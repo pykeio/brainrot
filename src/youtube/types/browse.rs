@@ -14,7 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{LocalizedText, deserialize_number_from_string};
+use super::{LocalizedText, UnlocalizedText, deserialize_number_from_string};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,7 +88,60 @@ pub enum RichItemContent<'s> {
 		thumbnail_overlays: Vec<ThumbnailOverlay<'s>>,
 		video_id: &'s str,
 		upcoming_event_data: Option<UpcomingEventData>
+	},
+	#[serde(rename_all = "camelCase")]
+	LockupViewModel {
+		#[serde(borrow)]
+		content_image: LockupContentImage<'s>,
+		#[serde(borrow)]
+		metadata: LockupMetadataViewModel<'s>,
+		content_id: &'s str
 	}
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LockupMetadataViewModel<'s> {
+	LockupMetadataViewModel {
+		#[serde(borrow)]
+		title: UnlocalizedText<'s>
+	}
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LockupContentImage<'s> {
+	ThumbnailViewModel {
+		#[serde(borrow)]
+		overlays: Vec<ThumbnailOverlayView<'s>>
+	}
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ThumbnailOverlayView<'s> {
+	ThumbnailBottomOverlayViewModel {
+		#[serde(borrow)]
+		badges: Vec<ThumbnailOverlayBadge<'s>>
+	},
+	#[serde(untagged)]
+	#[expect(unused)]
+	Other(#[serde(borrow)] simd_json::BorrowedValue<'s>)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ThumbnailOverlayBadge<'s> {
+	#[serde(rename_all = "camelCase")]
+	ThumbnailBadgeViewModel { text: &'s str, badge_style: ThumbnailOverlayBadgeStyle }
+}
+
+#[derive(Debug, Deserialize)]
+pub enum ThumbnailOverlayBadgeStyle {
+	#[serde(rename = "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT")]
+	Default,
+	#[serde(rename = "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE")]
+	Live
 }
 
 #[derive(Debug, Deserialize)]
