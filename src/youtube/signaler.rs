@@ -192,11 +192,9 @@ impl SignalerChannel {
 							break;
 						};
 
-						if event_id != "252" && event_id != "253" && event_id != "254" {
-							// 50, 51, and 53 are probably some internal stuff we don't care about. 25x seem to be correlated with new chat
+						if ["50", "51", "53", "71"].contains(&event_id.as_str()) {
+							// 50, 51, and 53 are probably some internal stuff we don't care about. 25x/26x seem to be correlated with new chat
 							// messages (though sometimes there aren't new chat messages at all and I'm not sure why).
-							// The channel starts off sending 252 but after a few seconds sends 253 instead, and in higher volume streams gets up to
-							// 254. Not sure the difference between the events, but they're all structured & function the same.
 							continue;
 						}
 
